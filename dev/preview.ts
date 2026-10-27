@@ -1,0 +1,66 @@
+// Runs the real panel and the real backend in one browser page against a pretend Lumiverse, for screenshots.
+import { setupBackend } from '../src/backend';
+import { setup } from '../src/frontend';
+
+const replies = [
+  `*Paige squints at the clipboard, then nods.* "Okay. A disgraced harbor pilot who still knows every rock in the bay. That I can work with."
+
+"Locking the basics in."
+
+\`\`\`
+Main character
+Name: Jory Kett
+## Identity
+Full name: Jory Kett
+Aliases: JK, the Pilot
+Age: 38
+Race: human
+Occupation: smuggler's pilot
+Goal: Pay off the Tide Debt before the Harbor Guild takes his boat.
+## Appearance & vibe
+Height: 6'2"
+Hair: black, shaved at the sides, salt-stiff
+Eyes: grey, always squinting at the waterline
+Usual clothes: oilskin coat, rope-burned gloves
+\`\`\`
+
+"Next up: Current status. Where is he right now, and how does he feel about it? Example: **Docked illegally at Pier Nine, pretending the Guild hasn't noticed.**"`,
+];
+const store = new Map<string, unknown>();
+let listener: (payload: unknown, userId?: string, session?: string) => void = () => {};
+const panelHandlers: ((m: unknown) => void)[] = [];
+let n = 0;
+const api = {
+  permissions: { has: () => true },
+  onFrontendMessage: (fn: typeof listener) => { listener = fn; return () => {}; },
+  sendToFrontend: (m: unknown) => { const copy = structuredClone(m); setTimeout(() => panelHandlers.forEach(h => h(copy)), 0); },
+  userStorage: {
+    getJson: async (path: string, o: { fallback: unknown }) => store.has(path) ? structuredClone(store.get(path)) : o.fallback,
+    setJson: async (path: string, value: unknown) => { store.set(path, structuredClone(value)); },
+  },
+  connections: { list: async () => [{ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro' }], get: async () => ({ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro' }) },
+  generate: {
+    rawStream: async function* () {
+      const text = replies.shift() ?? '"Got it."';
+      for (const part of text.match(/[\s\S]{1,30}/g)!) { await new Promise(r => setTimeout(r, 5)); yield { type: 'token', token: part }; }
+      yield { type: 'done', content: text, finish_reason: 'stop' };
+    },
+  },
+  characters: { get: async () => null, create: async (i: object) => ({ ...i, id: `c${++n}` }), update: async () => ({}) },
+  world_books: { get: async () => null, create: async (i: object) => ({ ...i, id: `b${++n}` }), entries: { list: async () => ({ data: [], total: 0 }), create: async () => ({}) } },
+  personas: { get: async () => null, create: async (i: object) => ({ ...i, id: `p${++n}` }) },
+  rpcPool: { sync: () => 'paige.cast', read: async (e: string) => { if (e === 'lumicast.paige.start') return { ok: true }; return { sessionId: 'x' }; } },
+};
+store.set('settings.json', { connectionId: 'c1', thinking: 'light' });
+setupBackend(api as never);
+const root = document.getElementById('root')!;
+const ctx = {
+  sendToBackend: (m: unknown) => { const copy = structuredClone(m); setTimeout(() => listener(copy, "u1", "s1"), 0); },
+  onBackendMessage: (h: (m: unknown) => void) => { panelHandlers.push(h); return () => {}; },
+  ui: { registerDrawerTab: () => ({ root, destroy() {} }) },
+  dom: { addStyle: (css: string) => { const s = document.createElement('style'); s.textContent = css; document.head.append(s); return () => s.remove(); } },
+};
+setup(ctx as never);
+(window as unknown as { paigeSend: (t: string) => void }).paigeSend = (t: string) => {
+  const box = root.querySelector('textarea')!; box.value = t; (root.querySelector('.pg-primary') as HTMLButtonElement).click();
+};
