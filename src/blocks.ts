@@ -73,7 +73,7 @@ export function parseBlocks(reply: string): ParsedBlock[] {
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** New version replaces the old one with the same type and name; first messages always add. Returns what changed, for the chat. */
-export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.now(), id = () => crypto.randomUUID()): { sheet: Block[]; added: Block[]; replaced: Block[] } {
+export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.now(), id: () => string = () => crypto.randomUUID()): { sheet: Block[]; added: Block[]; replaced: Block[] } {
   const next = sheet.map(b => ({ ...b }));
   const added: Block[] = [], replaced: Block[] = [];
   for (const p of parsed) {
