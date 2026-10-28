@@ -495,9 +495,12 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       if (closed) return;
       const s = await rpc.request<LumiCastStatus | null>('lumicastStatus').catch(() => null);
       if (!s) { if (++quiet > 20 && castTimer) { clearInterval(castTimer); castTimer = null; } return; }
-      const lines = s.finished.map(f => `${f.ok ? 'In Lumi Studio' : 'Didn’t make it'}: ${f.name}${f.ok ? '' : ` (${f.message})`}`);
+      const clashes = s.finished.filter(f => f.ok && /^saved as /.test(f.message));
+      const lines = s.finished.map(f => `${f.ok ? 'In Lumi Studio' : 'Didn’t make it'}: ${f.name}${f.ok && !clashes.includes(f) ? '' : ` (${f.message})`}`);
+      // A name that was already taken is easy to forget about, so it's said again at the end.
+      if (!s.running && clashes.length) lines.push(`${clashes.length === 1 ? 'One name was' : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`);
       const head = s.running ? `LumiCast: ${s.done} of ${s.total} done${s.current ? `, working on ${s.current}` : ''}…` : `LumiCast finished ${s.done} of ${s.total}.`;
-      makeNotify([before, head, ...lines].filter(Boolean).join('\n'), !s.running && s.finished.some(f => !f.ok));
+      makeNotify([before, head, ...lines].filter(Boolean).join('\n'), !s.running && (s.finished.some(f => !f.ok) || clashes.length > 0));
       if (!s.running && castTimer) { clearInterval(castTimer); castTimer = null; }
     }, options.castPollMs ?? 3000);
   }

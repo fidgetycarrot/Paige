@@ -794,10 +794,13 @@ function setup(ctx, options = {}) {
         }
         return;
       }
-      const lines = s.finished.map((f) => `${f.ok ? "In Lumi Studio" : "Didn’t make it"}: ${f.name}${f.ok ? "" : ` (${f.message})`}`);
+      const clashes = s.finished.filter((f) => f.ok && /^saved as /.test(f.message));
+      const lines = s.finished.map((f) => `${f.ok ? "In Lumi Studio" : "Didn’t make it"}: ${f.name}${f.ok && !clashes.includes(f) ? "" : ` (${f.message})`}`);
+      if (!s.running && clashes.length)
+        lines.push(`${clashes.length === 1 ? "One name was" : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`);
       const head = s.running ? `LumiCast: ${s.done} of ${s.total} done${s.current ? `, working on ${s.current}` : ""}…` : `LumiCast finished ${s.done} of ${s.total}.`;
       makeNotify([before, head, ...lines].filter(Boolean).join(`
-`), !s.running && s.finished.some((f) => !f.ok));
+`), !s.running && (s.finished.some((f) => !f.ok) || clashes.length > 0));
       if (!s.running && castTimer) {
         clearInterval(castTimer);
         castTimer = null;

@@ -30,7 +30,7 @@ Give it these permissions: generation, characters, world_books, personas.
 
 ## LumiCast and Lumi Studio
 
-Tick "Also send everyone's looks to LumiCast" before Make my card. Paige sends each character's look (and your persona's) to LumiCast 0.14.0 or newer, which translates them in the background with its own settings. Each one lands in Lumi Studio 1.13.0 or newer as a reusable character or persona, matched by name. Progress shows under the button. **Send looks again** reruns it after you change someone.
+Tick "Also send everyone's looks to LumiCast" before Make my card. Paige sends each character's look (and your persona's) to LumiCast 0.14.1 or newer, which translates them in the background with its own settings. Each one lands in Lumi Studio 1.13.1 or newer as a new reusable character or persona. Nobody already in Lumi Studio is ever replaced: a taken name is saved as "Vesper 2", Paige tells you, and Lumi Studio marks it **needs a new name** until you rename it. Progress shows under the button. **Send looks again** reruns it after you change someone.
 
 ## What changed from the card
 
