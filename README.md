@@ -1,6 +1,6 @@
 # Paige
 
-Paige is a Lumiverse extension that builds a character card with you. She interviews you one piece at a time (main character, side characters, scenario, locations, items, factions, history, concepts), pushes back on vague answers, and pins every finished piece to your Sheet. When you're done, **Make my card** builds the card, its lorebook and your persona in one go.
+Paige is a Lumiverse extension that builds a character card with you. She interviews you one piece at a time (main character, side characters, scenario, locations, items, factions, history, concepts), pushes back on vague answers, and tapes every finished piece into your notebook. When you're done, **Make my card** builds the card, its lorebook and your persona in one go.
 
 Paige, her personality and her whole interview are by **Deiomo** ([deiomo.github.io](https://deiomo.github.io/)), from the card "Paige (All-in-one writing assistant)", used with permission. This extension runs her inside Lumiverse so nothing has to be copied and pasted.
 
@@ -13,18 +13,18 @@ Give it these permissions: generation, characters, world_books, personas.
 ## Use
 
 1. **Settings:** pick the model connection Paige should use and save. It doesn't have to be your story model.
-2. **Chat:** answer Paige. The buttons above the box send her commands: Skip, You decide, Back, Sheet, Next, Done.
+2. **Chat:** answer Paige. The buttons above the box send her commands: Skip, You decide, Back, What's done, Next, Done.
    - **Full interview** (the default): one section at a time.
    - **Quick draft:** give her the pitch and she drafts the whole piece, then goes through the weak spots with you.
-3. **Sheet:** every finished piece lands here. Open one to read it, edit it, or delete it. Your edits win; Paige uses your version from then on. First messages have a "Use on the card" box.
-4. **Make my card**, at the bottom of the Sheet:
+3. **Notebook:** every finished piece is taped in here. Open one to read it, edit it, or delete it. Your edits win; Paige uses your version from then on. First messages have a "Use on the card" box.
+4. **Make my card**, at the bottom of the Notebook:
    - Main character goes in the description, the scenario in the scenario field.
    - Side characters and lore become lorebook entries, keyed on their names, other names and trigger words.
    - Kept first messages become the greeting and alternate greetings.
    - Your persona, if you made one with Paige, is created in Lumiverse.
    - Pressing it again later updates the same card instead of making a second one. Lorebook entries you added by hand stay.
 
-**Retry** takes back Paige's last reply (and anything it put on the Sheet) and asks again. **Start over** in Settings clears the chat and Sheet for a new card; the old chat is kept in Paige's storage.
+**Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again. **Start over** in Settings clears the chat and notebook for a new card; the old chat is kept in Paige's storage.
 
 ## LumiCast and Lumi Studio
 
@@ -34,11 +34,15 @@ Tick "Also send everyone's looks to LumiCast" before Make my card. Paige sends e
 
 Only what running inside an extension needed:
 
-- Finished pieces go to the Sheet instead of being copied by hand, and the hand-off tells you to check the Sheet.
+- Finished pieces go into the notebook instead of being copied by hand, and the hand-off tells you to check it.
 - No blank preset, empty persona or summarizer workaround; Paige has her own prompt and ignores your preset.
 - First messages and the new optional persona step come out as pieces the app can pick up.
 - The pointer to the single-character version of Paige is gone from her greeting.
 - The quoted song lyric in her sign-off is now a short reference to it.
+
+## Credits
+
+The handwritten lettering is Permanent Marker by Font Diner, under the SIL Open Font License (`licenses/PermanentMarker-OFL.txt`).
 
 ## Build
 

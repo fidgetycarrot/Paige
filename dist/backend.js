@@ -354,7 +354,7 @@ function replaceOnce(text, find, replace) {
 }
 function paigeRules() {
   let text = CARD.description;
-  text = replaceOnce(text, "- Then tell {{user}}: scroll up and review each block, and where each type goes (see Job).", "- Then tell {{user}} to look over each piece on the Sheet tab (they can edit or delete pieces there), and that the Make my card button puts each type where it goes (see Job).");
+  text = replaceOnce(text, "- Then tell {{user}}: scroll up and review each block, and where each type goes (see Job).", "- Then tell {{user}} to look over each piece in the Notebook tab (they can edit or delete pieces there), and that the Make my card button puts each type where it goes (see Job).");
   text = replaceOnce(text, `- Paige will ask {{user}} if they want her to draft a few first messages for their scenario using what was built.
 `, `- Paige will ask {{user}} if they want her to draft a few first messages for their scenario using what was built.
 - Each first message is its own code block labeled First message. Never write {{user}}'s actions, words, thoughts or feelings in a first message.
@@ -385,13 +385,13 @@ var MODE_NOTES = {
   quick: `### Interview mode: quick
 - After Setup and the pitch, for the piece {{user}} picked, don't interview section by section. Draft every section yourself from the pitch and what already exists, in the current style, as if {{user}} said "you decide" to each, and output the whole block once.
 - Then go through only the weak, generic or guessed spots, one or two per message: say what you guessed and why it matters, offer a sharper version, ask keep or change. Push back the same way you would in a full interview.
-- Whenever something changes, output the whole updated block again (same label and Name) so the Sheet gets the new version.
+- Whenever something changes, output the whole updated block again (same label and Name) so the notebook gets the new version.
 - NSFW sections follow the NSFW setting as usual. {{user}} can switch back to the full interview on the panel.`
 };
 function appNotes(mode) {
   return `### App notes (Paige is running inside the Paige extension)
-- Every finished piece goes onto {{user}}'s Sheet the moment you output its code block. Never ask {{user}} to copy or paste anything.
-- The Sheet below is the saved version of every piece. If {{user}} edited a piece there, their version wins. Use it to keep names consistent even after older messages are gone.
+- Every finished piece gets taped into {{user}}'s notebook (the Notebook tab on their panel) the moment you output its code block. When you or {{user}} say "the sheet", that's this notebook. Never ask {{user}} to copy or paste anything.
+- The notebook below is the saved version of every piece. If {{user}} edited a piece there, their version wins. Use it to keep names consistent even after older messages are gone.
 - Block format the app reads: open a code fence, put the type label alone on the first line inside it, then the sheet format. Labels: ${BLOCK_TYPES.join(", ")}. Example:
 \`\`\`
 Side character
@@ -409,15 +409,15 @@ function sheetText(blocks) {
   const pieces = blocks.filter((b) => b.type !== "First message");
   const firsts = blocks.filter((b) => b.type === "First message");
   if (!pieces.length && !firsts.length)
-    return `### The Sheet
+    return `### The notebook
 (empty so far)`;
-  return ["### The Sheet (saved pieces, newest version of each)", ...pieces.map(fence), ...firsts.length ? [`First messages saved so far: ${firsts.length}.`] : []].join(`
+  return ["### The notebook (saved pieces, newest version of each)", ...pieces.map(fence), ...firsts.length ? [`First messages saved so far: ${firsts.length}.`] : []].join(`
 
 `);
 }
 function greeting(mode) {
   let text = CARD.first_mes;
-  text = replaceOnce(text, "Every finished piece comes out as its own code block for you to copy and paste your card or lorebook. Or you can link me your own card or lorebook and we keep building on it.", "Every finished piece gets pinned to your Sheet, and when we're done you hit Make my card and the whole thing gets built for you. Or paste me your own card or lorebook and we keep building on it.");
+  text = replaceOnce(text, "Every finished piece comes out as its own code block for you to copy and paste your card or lorebook. Or you can link me your own card or lorebook and we keep building on it.", "Every finished piece gets taped into your notebook, and when we're done you hit Make my card and the whole thing gets built for you. Or paste me your own card or lorebook and we keep building on it.");
   const from = text.indexOf(" Also remember to turn off any summarizing extensions"), to = text.indexOf('technical difficulties."');
   if (from < 0 || to < from)
     throw new Error("Paige greeting edit did not match: setup note");
@@ -454,7 +454,7 @@ function buildMessages(input) {
 `);
   const messages = [{ role: "system", content: system }];
   if (trimmed)
-    messages.push({ role: "system", content: "(Older messages were trimmed to save room. Every finished piece is on the Sheet above.)" });
+    messages.push({ role: "system", content: "(Older messages were trimmed to save room. Every finished piece is in the notebook above.)" });
   for (const turn of kept)
     messages.push({ role: turn.role, content: turn.content });
   if (messages[1]?.role === "assistant")
@@ -643,7 +643,7 @@ function setupBackend(api) {
       if (r.action === "editBlock") {
         const block = session().blocks.find((b) => b.id === input.id);
         if (!block)
-          throw new Error("That piece is no longer on the Sheet.");
+          throw new Error("That piece is no longer in the notebook.");
         const body = text(input.body, "piece text (maximum 40,000 characters)", 40000);
         if (!body)
           throw new Error("A piece can't be empty. Use Delete instead.");
@@ -771,10 +771,10 @@ function setupBackend(api) {
             throw new Error(`Grant Paige the ${permission} permission in Extensions to make the card.`);
         const current = session();
         if (!current.blocks.some((b) => b.type !== "First message"))
-          throw new Error("The Sheet is empty. Build something with Paige first.");
+          throw new Error("The notebook is empty. Build something with Paige first.");
         const plan = planCard(current.blocks, { name: typeof input.name === "string" ? input.name : "" });
         if (plan.persona && !api.permissions.has("personas"))
-          throw new Error("Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the Sheet.");
+          throw new Error("Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.");
         const mark = { paige: { sessionId: current.id } };
         const old = current.card ? await api.characters.get(current.card.characterId, userId).catch(() => null) : null;
         let book = old && current.card?.worldBookId && old.world_book_ids?.includes(current.card.worldBookId) ? await api.world_books.get(current.card.worldBookId, userId).catch(() => null) : null;
@@ -830,7 +830,7 @@ function setupBackend(api) {
       async function sendLooks(current, cardName) {
         const looks = looksFrom(current.blocks);
         if (!looks.length)
-          return { state: "skipped", message: "No one on the Sheet has a look section, so nothing went to LumiCast." };
+          return { state: "skipped", message: "No one in the notebook has a look section, so nothing went to LumiCast." };
         const pool = api.rpcPool;
         if (typeof pool?.sync !== "function" || typeof pool.read !== "function")
           return { state: "failed", message: "This Lumiverse version can't share data between extensions." };

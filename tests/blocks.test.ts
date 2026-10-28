@@ -152,7 +152,7 @@ The bell rings.
 describe('Paige prompt', () => {
   test('every edit to Dei\'s text lands', () => {
     const rules = paigeRules();
-    expect(rules).toContain('look over each piece on the Sheet tab');
+    expect(rules).toContain('look over each piece in the Notebook tab');
     expect(rules).toContain('### Phase 4.5: Persona (optional)');
     expect(rules).toContain('labeled First message');
     expect(rules).not.toContain('scroll up and review');
@@ -160,7 +160,7 @@ describe('Paige prompt', () => {
   });
   test('greeting loses the card-only setup notes', () => {
     const text = greeting('full');
-    expect(text).toContain('pinned to your Sheet');
+    expect(text).toContain('taped into your notebook');
     expect(text).not.toContain('blank preset');
     expect(text).not.toContain('Little note');
     expect(text).toContain('Then give me the pitch in a few sentences.');

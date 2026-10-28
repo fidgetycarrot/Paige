@@ -1,6 +1,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, labelOf, type Block, type BlockType, type Mode } from './blocks';
 import type { CardResult, CastStatus, LumiCastStatus, Session, Snapshot } from './contracts';
+import { MARKER_WOFF2 } from './font';
 
 export function createRpc(ctx: Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>, onSession: (session: Session, busy: boolean) => void, timeout = 320_000) {
   let closed = false;
@@ -60,13 +61,38 @@ function prose(target: HTMLElement, text: string) {
   }
 }
 
-/** A finished piece in the chat: a work ticket, folded shut. The full text lives on the Sheet. */
+/** A piece's sheet text laid out like a filled-in form: section names, labels, answers. Built as DOM nodes. */
+function sheetBody(target: HTMLElement, body: string, skipName = true) {
+  const sheet = el('div', undefined, 'pg-form');
+  let list: HTMLUListElement | null = null;
+  for (const raw of body.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line) { list = null; continue; }
+    const heading = /^#{1,4}\s+(.+)$/.exec(line);
+    if (heading) { sheet.append(el('h4', heading[1].replace(/[*_]+/g, ''))); list = null; continue; }
+    const bullet = /^[-*•]\s+(.+)$/.exec(line);
+    if (bullet) { if (!list) { list = el('ul'); sheet.append(list); } const li = el('li'); inline(li, bullet[1]); list.append(li); continue; }
+    list = null;
+    const field = /^([^:]{1,40}):\s*(.*)$/.exec(line);
+    if (field && !/[.!?"“]/.test(field[1])) {
+      if (skipName && /^name$/i.test(field[1].trim())) continue;
+      const row = el('div', undefined, 'pg-field-row'); row.append(el('span', field[1].replace(/[*_]+/g, ''), 'pg-label'));
+      const value = el('span'); inline(value, field[2]); row.append(value); sheet.append(row);
+      continue;
+    }
+    const p = el('p'); inline(p, line); sheet.append(p);
+  }
+  target.append(sheet);
+}
+
+/** A finished piece in the chat: an index card taped onto the page, folded shut. The full text lives in the notebook. */
 function ticket(type: BlockType, body: string): HTMLElement {
-  const box = el('details', undefined, 'pg-ticket');
+  const box = el('details', undefined, 'pg-card');
   const name = type === 'Scenario' || type === 'First message' ? '' : (/^\s*[*_]*Name[*_]*\s*:\s*(.+)$/im.exec(body)?.[1] ?? '').replace(/[*_]+/g, '').trim();
   const head = el('summary');
-  head.append(el('span', type, 'pg-ticket-type'), el('span', name || (type === 'First message' ? body.trim().split('\n')[0].slice(0, 70) : ''), 'pg-ticket-name'), el('span', 'on the Sheet', 'pg-ticket-tag'));
-  box.append(head, el('pre', body.trim()));
+  head.append(el('span', type, 'pg-card-type'), el('span', name || (type === 'First message' ? body.trim().split('\n')[0].slice(0, 70) : ''), 'pg-card-name'), el('span', 'in your notebook', 'pg-card-tag'));
+  const inner = el('div', undefined, 'pg-inner'); sheetBody(inner, body.trim());
+  box.append(head, inner);
   return box;
 }
 
@@ -90,110 +116,140 @@ function message(target: HTMLElement, text: string) {
 }
 
 const STYLES = `
-.pg-app{--pg-violet:#a35cff;--pg-violet-soft:#a35cff26;--pg-ink:var(--lumiverse-text,#ece7f4);--pg-muted:var(--lumiverse-text-muted,#aaa2b8);--pg-line:#8f80a83d;--pg-bg:var(--lumiverse-bg,#18141f);--pg-raise:#ffffff08;box-sizing:border-box;font:15px/1.6 inherit;color:var(--pg-ink);display:flex;flex-direction:column;height:100%;min-height:520px;max-width:820px;margin:0 auto}
+@font-face{font-family:'Paige Marker';src:url(data:font/woff2;base64,${MARKER_WOFF2}) format('woff2');font-display:swap}
+.pg-app{--pg-paper:#1d1a25;--pg-desk:#14121a;--pg-rule:#a99ccc1c;--pg-margin:#ff7a9a55;--pg-ink:#ebe5f4;--pg-pencil:#a39bb5;--pg-violet:#b583ff;--pg-violet-ink:#1c1029;--pg-note:#dccbff;--pg-note-ink:#24192f;--pg-card:#272331;--pg-edge:#ffffff14;--pg-hand:'Paige Marker','Marker Felt','Bradley Hand',cursive;--pg-row:26px;--pg-m:46px;
+  box-sizing:border-box;font-size:15px;line-height:var(--pg-row);color:var(--pg-ink);display:flex;flex-direction:column;height:100%;min-height:520px;max-width:820px;margin:0 auto;background:var(--pg-desk)}
 .pg-app *{box-sizing:border-box}
-.pg-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:18px 18px 0;flex-wrap:wrap}
-.pg-title{font-size:30px;font-weight:800;letter-spacing:-.5px;line-height:1;color:var(--pg-violet);margin:0;transform:skew(-6deg);transform-origin:left bottom}
-.pg-sub{color:var(--pg-muted);font-size:13px;margin:6px 0 0}
-.pg-tabs{display:flex;gap:2px;border-bottom:1px solid var(--pg-line);padding:0 18px;margin-top:14px}
-.pg-tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--pg-muted);padding:9px 12px;font:inherit;font-size:14px;cursor:pointer;margin-bottom:-1px}
-.pg-tabs button[aria-selected=true]{color:var(--pg-ink);border-bottom-color:var(--pg-violet);font-weight:600}
-.pg-view{flex:1;min-height:0;display:flex;flex-direction:column}
+.pg-top{display:flex;align-items:center;gap:12px;padding:14px 18px 4px}
+.pg-title{font:400 34px/1 var(--pg-hand);color:var(--pg-violet);margin:0;position:relative;padding-top:8px;transform:rotate(-2deg);transform-origin:left center}
+.pg-crown{position:absolute;left:-4px;top:-6px;width:22px;height:16px;transform:rotate(-14deg)}
+.pg-sub{color:var(--pg-pencil);font-size:13px;line-height:1.4;margin:0}
+/* Divider tabs that stick up from the top of the page. */
+.pg-tabs{display:flex;gap:4px;padding:8px 14px 0;align-items:flex-end}
+.pg-tabs button{background:#ffffff0a;border:1px solid var(--pg-edge);border-bottom:0;border-radius:9px 9px 0 0;color:var(--pg-pencil);padding:6px 14px 5px;font:inherit;font-size:14px;line-height:1.3;cursor:pointer}
+.pg-tabs button[aria-selected=true]{background:var(--pg-paper);color:var(--pg-ink);font-weight:600;padding-bottom:8px;margin-bottom:-1px;position:relative;z-index:1}
+.pg-view{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--pg-paper);border-top:1px solid var(--pg-edge)}
 .pg-view[hidden]{display:none!important}
-.pg-log{flex:1;min-height:0;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:18px}
-.pg-msg p{margin:0 0 10px}.pg-msg p:last-child{margin-bottom:0}.pg-msg ul{margin:0 0 10px;padding-left:20px}
-.pg-msg em{color:var(--pg-muted)}
-.pg-msg.pg-user{align-self:flex-end;max-width:85%;background:var(--pg-violet-soft);border-radius:14px 14px 4px 14px;padding:9px 14px;white-space:pre-wrap}
-.pg-msg.pg-paige{max-width:100%}
-.pg-msg code{background:var(--pg-raise);border-radius:4px;padding:1px 5px;font-size:.92em}
+/* The page: faint rules every line, and the margin line. The rules scroll with the writing. */
+.pg-page{background:linear-gradient(90deg,transparent calc(var(--pg-m) - 1px),var(--pg-margin) calc(var(--pg-m) - 1px) var(--pg-m),transparent var(--pg-m)),repeating-linear-gradient(transparent 0 calc(var(--pg-row) - 1px),var(--pg-rule) calc(var(--pg-row) - 1px) var(--pg-row)),var(--pg-paper);background-attachment:local}
+.pg-log{flex:1;min-height:0;overflow-y:auto;padding:var(--pg-row) 18px var(--pg-row) calc(var(--pg-m) + 14px);position:relative}
+.pg-msg{margin:0 0 var(--pg-row)}
+.pg-msg p{margin:0 0 var(--pg-row)}.pg-msg>p:last-child,.pg-msg>ul:last-child{margin-bottom:0}.pg-msg ul{margin:0 0 var(--pg-row);padding-left:20px}
+.pg-paige em{color:var(--pg-pencil)}
+.pg-paige strong{color:#fff;background:linear-gradient(transparent 58%,#b583ff40 58%)}
+.pg-msg code{background:#ffffff10;border-radius:4px;padding:0 5px;font-size:.92em}
 .pg-msg a{color:var(--pg-violet)}
-.pg-pre,.pg-ticket pre,.pg-piece pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0}
-.pg-pre{background:var(--pg-raise);border-radius:8px;padding:10px 12px;margin:0 0 10px}
-.pg-ticket{border:1px dashed var(--pg-violet);border-radius:3px;margin:4px 0 12px;background:linear-gradient(90deg,var(--pg-violet) 0 4px,transparent 4px)}
-.pg-ticket summary{display:flex;gap:10px;align-items:baseline;padding:9px 12px 9px 16px;cursor:pointer;list-style:none;flex-wrap:wrap}
-.pg-ticket summary::-webkit-details-marker{display:none}
-.pg-ticket-type{font-weight:700;color:var(--pg-violet)}
-.pg-ticket-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pg-ticket-tag{font-size:12px;color:var(--pg-muted)}
-.pg-ticket pre{padding:4px 14px 12px 16px;border-top:1px dashed var(--pg-line)}
-.pg-saved{font-size:12px;color:var(--pg-muted);margin-top:6px}
-.pg-working{color:var(--pg-muted);font-style:italic}
-.pg-compose{border-top:1px solid var(--pg-line);padding:10px 18px max(16px,env(safe-area-inset-bottom));background:var(--pg-bg)}.pg-app.pg-typing .pg-compose{padding-bottom:10px}
+/* Your answers: a note stuck onto the page. */
+.pg-user{width:fit-content;max-width:84%;margin-left:auto;background:var(--pg-note);color:var(--pg-note-ink);padding:9px 14px 11px;line-height:1.5;border-radius:2px 2px 2px 12px;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 2px 0 #00000055;transform:rotate(var(--pg-tilt,.5deg))}
+.pg-pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;margin:0}
+.pg-pre{background:#ffffff08;border-radius:6px;padding:0 12px;margin:0 0 var(--pg-row);line-height:var(--pg-row)}
+/* A finished piece: an index card taped in. */
+.pg-card{position:relative;background:var(--pg-card);border-radius:4px;border-top:3px solid var(--pg-margin);margin:6px 0 var(--pg-row);box-shadow:0 1px 0 #00000066}
+.pg-card::before{content:'';position:absolute;top:-10px;left:50%;width:58px;height:16px;margin-left:-29px;background:#ffffff1c;transform:rotate(-3deg);border-radius:1px}
+.pg-card summary{display:flex;gap:10px;align-items:baseline;padding:10px 14px;cursor:pointer;list-style:none;flex-wrap:wrap;line-height:1.4}
+.pg-card summary::-webkit-details-marker{display:none}
+.pg-card-type{font:400 15px/1.3 var(--pg-hand);color:var(--pg-violet)}
+.pg-card-name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pg-card-tag{font-size:12px;color:var(--pg-pencil)}
+.pg-card summary::after{content:'›';color:var(--pg-pencil);transition:transform .15s}
+.pg-card[open] summary::after{transform:rotate(90deg)}
+.pg-saved{font-size:12px;line-height:1.5;color:var(--pg-pencil);margin-top:6px}
+.pg-working{display:flex;align-items:center;gap:8px;color:var(--pg-pencil);font:400 16px/var(--pg-row) var(--pg-hand)}
+.pg-working svg{width:20px;height:20px;color:var(--pg-violet)}
+/* The bottom of the page, where you write. */
+.pg-compose{border-top:1px solid var(--pg-edge);padding:10px 18px max(14px,env(safe-area-inset-bottom));background:var(--pg-desk);line-height:1.4}.pg-app.pg-typing .pg-compose{padding-bottom:10px}
 .pg-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
-.pg-chips button{border:1px solid var(--pg-line);background:none;color:var(--pg-ink);border-radius:999px;padding:3px 11px;font:inherit;font-size:13px;cursor:pointer}
-.pg-mode{margin-left:auto;display:flex;border:1px solid var(--pg-line);border-radius:999px;overflow:hidden;font-size:12px}
-.pg-mode button{border:0;border-radius:0;padding:3px 10px;color:var(--pg-muted)}
-.pg-mode button[aria-pressed=true]{background:var(--pg-violet);color:#1b0f2b;font-weight:600}
-.pg-row{display:flex;gap:8px;align-items:flex-end}
-.pg-app textarea,.pg-app input[type=text],.pg-app select{width:100%;border:1px solid var(--pg-line);border-radius:10px;background:var(--pg-raise);color:inherit;padding:10px 12px;font:inherit}
-.pg-compose textarea{resize:none;min-height:44px;max-height:180px}
-.pg-app button.pg-btn{border:1px solid var(--pg-line);border-radius:10px;background:var(--pg-raise);color:inherit;padding:9px 15px;font:inherit;cursor:pointer;white-space:nowrap}
-.pg-app button.pg-primary{background:var(--pg-violet);border-color:var(--pg-violet);color:#1b0f2b;font-weight:650}
+.pg-chips button{border:1px dashed #a99ccc55;background:none;color:var(--pg-ink);border-radius:6px;padding:2px 10px;font:inherit;font-size:13px;cursor:pointer}
+.pg-chips button:hover:not(:disabled){border-style:solid;border-color:var(--pg-violet)}
+.pg-mode{margin-left:auto;display:flex;border:1px solid var(--pg-edge);border-radius:7px;overflow:hidden;font-size:12px}
+.pg-app .pg-mode button{border:0;border-radius:0;padding:3px 10px;color:var(--pg-pencil)}
+.pg-app .pg-mode button[aria-pressed=true]{background:var(--pg-violet);color:var(--pg-violet-ink);font-weight:600}
+.pg-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.pg-app textarea,.pg-app input[type=text],.pg-app select{width:100%;border:1px solid var(--pg-edge);border-radius:8px;background:var(--pg-paper);color:inherit;padding:10px 12px;font:inherit;line-height:1.45}
+.pg-app textarea:focus,.pg-app input[type=text]:focus,.pg-app select:focus{border-color:var(--pg-violet);outline:none}
+.pg-compose .pg-row{flex-wrap:nowrap}
+.pg-compose textarea{resize:none;min-height:44px;max-height:180px;flex:1}
+.pg-app button.pg-btn{border:1px solid var(--pg-edge);border-radius:8px;background:#ffffff0a;color:inherit;padding:9px 15px;font:inherit;line-height:1.4;cursor:pointer;white-space:nowrap}
+.pg-app button.pg-primary{background:var(--pg-violet);border-color:var(--pg-violet);color:var(--pg-violet-ink);font-weight:650}
 .pg-app button:disabled{opacity:.45;cursor:default}
 .pg-app :focus-visible{outline:2px solid var(--pg-violet);outline-offset:2px}
-.pg-status{font-size:13px;color:var(--pg-muted);min-height:20px;margin-top:6px;white-space:pre-wrap}
-.pg-status[data-error=true]{color:#ff9d9d}
-.pg-scroll{flex:1;min-height:0;overflow-y:auto;padding:18px}
-.pg-group{margin-bottom:22px}
-.pg-group h3{font-size:13px;color:var(--pg-muted);font-weight:600;margin:0 0 8px}
-.pg-piece{border-left:3px solid var(--pg-violet);background:var(--pg-raise);border-radius:0 8px 8px 0;margin-bottom:8px}
-.pg-piece summary{padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
-.pg-piece summary span:first-child{flex:1;font-weight:600}
-.pg-piece .pg-inner{padding:0 12px 12px}
-.pg-piece textarea{min-height:240px;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
-.pg-piece label{display:flex;gap:8px;align-items:center;font-size:13px}
-.pg-note{font-size:12px;color:var(--pg-muted)}
-.pg-make{border:1px solid var(--pg-violet);border-radius:12px;padding:16px;margin-top:8px}
-.pg-make h3{color:var(--pg-ink);font-size:16px;margin:0 0 4px}
-.pg-field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.pg-status{font-size:13px;line-height:1.5;color:var(--pg-pencil);min-height:20px;margin-top:6px;white-space:pre-wrap}
+.pg-status:empty{min-height:0;margin:0}
+.pg-status[data-error=true]{color:#ff9db1}
+.pg-scroll{flex:1;min-height:0;overflow-y:auto;padding:var(--pg-row) 18px calc(var(--pg-row) * 2) calc(var(--pg-m) + 14px);line-height:1.5}
+.pg-group{margin-bottom:28px}
+.pg-group h3{font:400 20px/1.2 var(--pg-hand);color:var(--pg-violet);margin:0 0 14px;transform:rotate(-1deg);transform-origin:left}
+.pg-card .pg-inner{padding:0 14px 14px;border-top:1px dashed var(--pg-edge)}
+.pg-form{padding:12px 0 2px;line-height:1.5}
+.pg-form h4{font:400 16px/1.3 var(--pg-hand);color:var(--pg-violet);margin:16px 0 6px}.pg-form h4:first-child{margin-top:2px}
+.pg-field-row{display:grid;grid-template-columns:minmax(90px,150px) 1fr;gap:12px;padding:3px 0;border-bottom:1px solid var(--pg-rule)}
+.pg-label{color:var(--pg-pencil);font-size:13px;padding-top:1px}
+.pg-form ul{margin:4px 0;padding-left:20px}.pg-form p{margin:6px 0}
+@media (max-width:480px){.pg-field-row{grid-template-columns:1fr;gap:0}.pg-label{font-size:12px}}
+.pg-card .pg-inner textarea{min-height:300px;margin-top:12px;font-size:14px;line-height:1.55}
+.pg-inner>.pg-row{margin-top:12px}.pg-card label{display:flex;gap:8px;align-items:center;font-size:13px;margin-right:auto}
+.pg-note{font-size:12px;line-height:1.5;color:var(--pg-pencil)}
+/* Make my card: the page you tear out at the end. */
+.pg-make{margin-top:34px;padding-top:22px;border-top:2px dashed #a99ccc55;position:relative}
+.pg-make::before{content:'✂';position:absolute;top:-15px;left:-4px;font-size:18px;color:var(--pg-pencil);background:var(--pg-paper);padding:0 6px}
+.pg-make h3{font:400 24px/1.2 var(--pg-hand);color:var(--pg-violet);margin:0 0 6px;transform:rotate(-1deg);transform-origin:left}
+.pg-field{display:flex;flex-direction:column;gap:6px;margin:14px 0}
 .pg-field>span{font-size:13px;font-weight:600}
-.pg-check{display:flex;gap:8px;align-items:flex-start;margin:12px 0;font-size:14px}
-.pg-check input{margin-top:4px}
-.pg-empty{color:var(--pg-muted);padding:30px 0;text-align:center}
+.pg-check{display:flex;gap:9px;align-items:flex-start;margin:14px 0;font-size:14px}
+.pg-check input{margin-top:3px;accent-color:var(--pg-violet)}
+.pg-empty{color:var(--pg-pencil);padding:10px 0 20px;font:400 18px/1.4 var(--pg-hand)}
+.pg-app hr{border:0;border-top:1px dashed var(--pg-edge);margin:22px 0}
+.pg-credit{margin-top:22px}
 .pg-app [hidden]{display:none!important}
-.pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{margin-top:0}.pg-app.pg-typing .pg-log{padding-top:10px}
-@media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
-@media (prefers-reduced-motion:no-preference){.pg-ticket.pg-new{animation:pg-pin .5s ease-out}@keyframes pg-pin{from{background-color:var(--pg-violet-soft)}to{background-color:transparent}}}
+.pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{padding-top:6px}
+@media (max-width:480px){.pg-app{--pg-m:26px}.pg-top{padding:12px 14px 2px}.pg-sub{display:none}.pg-log{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-scroll{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-compose{padding:8px 12px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:6px 10px 0}.pg-mode{margin-left:0}}
+@media (prefers-reduced-motion:no-preference){.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
 `;
 
 const TYPE_ORDER: BlockType[] = [...BLOCK_TYPES];
-const COMMANDS = ['skip', 'you decide', 'back', 'sheet', 'next', 'done'];
+const COMMANDS: [string, string, string][] = [['Skip', 'skip', 'Leave this part empty and move on'], ['You decide', 'you decide', 'Paige fills it in from what you have so far'], ['Back', 'back', 'Reopen the last part'], ['What’s done', 'sheet', 'Paige lists everything finished so far'], ['Next', 'next', 'Finish this piece and pick the next one'], ['Done', 'done', 'Wrap up with what you have']];
 
 export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: number } = {}) {
   let closed = false, busy = false, remoteBusy = false, session: Session | null = null, snapshot: Snapshot | null = null;
   let streaming: { node: HTMLElement; text: string } | null = null;
+  // True from the start of Paige's reply until you scroll or type, so nothing yanks you away from where you're reading.
+  let keepReading = false;
   let castTimer: ReturnType<typeof setInterval> | null = null;
   const rpc = createRpc(ctx, (next, nextBusy) => { if (closed) return; remoteBusy = nextBusy; if (!busy) { session = next; render(); } });
   const tab = ctx.ui.registerDrawerTab({ id: 'paige', title: 'Paige', shortName: 'Paige', description: 'Build characters, a scenario and lore with Paige, then make the card', keywords: ['character', 'card', 'lorebook', 'scenario', 'creator', 'persona', 'writing'],
-    iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>' });
+    iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3h10a1.5 1.5 0 0 1 1.5 1.5v15a1.5 1.5 0 0 1-1.5 1.5h-10z"/><path d="M4 6.5h4M4 10.5h4M4 14.5h4M4 18.5h4"/><path d="M10.5 8l1.2-1.6 1.3 1.2 1.3-1.2 1.2 1.6v1.6h-5z"/><path d="M10.5 13.5h5M10.5 16.5h3.5"/></svg>' });
   const removeStyle = ctx.dom.addStyle(STYLES);
   const app = el('div', undefined, 'pg-app'); tab.root.append(app);
 
   // ── Header and tabs ──
   const top = el('div', undefined, 'pg-top');
-  const heading = el('div'); heading.append(el('h1', 'Paige', 'pg-title'), el('p', 'Builds your characters, scenario and lore with you, then makes the card.', 'pg-sub'));
-  top.append(heading);
+  const title = el('h1', 'Paige', 'pg-title'); title.insertAdjacentHTML('afterbegin', '<svg class="pg-crown" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13 3.5 3l5 5 3-6 3 6 5-5L21 13z"/></svg>');
+  const heading = el('div'); heading.append(title);
+  const sub = el('p', 'Your notebook for characters, scenarios and lore. When it’s full, it becomes a card.', 'pg-sub');
+  top.append(heading, sub);
   const tabs = el('div', undefined, 'pg-tabs'); tabs.setAttribute('role', 'tablist');
   const views: Record<'chat' | 'sheet' | 'settings', HTMLElement> = { chat: el('section', undefined, 'pg-view'), sheet: el('section', undefined, 'pg-view'), settings: el('section', undefined, 'pg-view') };
   const tabButtons = {} as Record<keyof typeof views, HTMLButtonElement>;
   const show = (name: keyof typeof views) => {
     for (const [key, view] of Object.entries(views) as [keyof typeof views, HTMLElement][]) { view.hidden = key !== name; tabButtons[key].setAttribute('aria-selected', String(key === name)); }
     try { localStorage.setItem('paige.tab', name); } catch { /* not kept */ }
-    if (name === 'chat') log.scrollTop = log.scrollHeight;
+    if (name === 'chat' && !keepReading) log.scrollTop = log.scrollHeight;
     fitSoon();
   };
-  for (const [key, label] of [['chat', 'Chat'], ['sheet', 'Sheet'], ['settings', 'Settings']] as const) {
+  for (const [key, label] of [['chat', 'Chat'], ['sheet', 'Notebook'], ['settings', 'Settings']] as const) {
     const b = el('button', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.addEventListener('click', () => show(key));
     tabButtons[key] = b; tabs.append(b);
   }
   app.append(top, tabs, views.chat, views.sheet, views.settings);
 
   // ── Chat ──
-  const log = el('div', undefined, 'pg-log'); log.setAttribute('aria-live', 'polite');
+  const log = el('div', undefined, 'pg-log pg-page'); log.setAttribute('aria-live', 'polite');
+  // Any scroll you make yourself hands control back.
+  for (const kind of ['wheel', 'touchmove']) log.addEventListener(kind, () => { if (!streaming) keepReading = false; }, { passive: true });
   const compose = el('div', undefined, 'pg-compose');
   const chips = el('div', undefined, 'pg-chips');
-  for (const command of COMMANDS) {
-    const b = el('button', command[0].toUpperCase() + command.slice(1)); b.type = 'button'; b.title = `Send “${command}”`;
+  for (const [label, command, hint] of COMMANDS) {
+    const b = el('button', label); b.type = 'button'; b.title = hint;
     b.addEventListener('click', () => void sendText(command)); chips.append(b);
   }
   const mode = el('div', undefined, 'pg-mode'); mode.setAttribute('role', 'group'); mode.setAttribute('aria-label', 'Interview');
@@ -246,14 +302,14 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     // Padding the drawer puts under Paige would still let the drawer itself scroll a little; take that off too.
     const spare = outer ? outer.scrollHeight - outer.clientHeight : 0;
     if (spare > 1) app.style.height = `${Math.max(260, app.getBoundingClientRect().height - spare)}px`;
-    if (atBottom || typing) log.scrollTop = log.scrollHeight;
+    if (!streaming && !keepReading && (atBottom || typing)) log.scrollTop = log.scrollHeight;
   };
   // iOS moves the page a moment after the keyboard opens or closes, so look again once it has settled.
   const fitSoon = () => { fit(); fitTimers.forEach(clearTimeout); fitTimers = [120, 350, 700].map(ms => setTimeout(fit, ms)); };
   view?.addEventListener('resize', fitSoon);
   view?.addEventListener('scroll', fit);
   window.addEventListener('resize', fitSoon);
-  box.addEventListener('focus', fitSoon);
+  box.addEventListener('focus', () => { keepReading = false; fitSoon(); });
   box.addEventListener('blur', () => setTimeout(fitSoon, 50));
   // Showing the drawer tab, or switching tabs inside Paige, changes where she sits.
   const seen = typeof ResizeObserver === 'function' ? new ResizeObserver(() => fitSoon()) : null;
@@ -267,12 +323,12 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   stopButton.addEventListener('click', () => void rpc.request('stop').catch(() => {}));
   retryButton.addEventListener('click', () => void talk('retry'));
 
-  // ── Sheet ──
-  const sheetScroll = el('div', undefined, 'pg-scroll');
+  // ── Notebook (the Sheet) ──
+  const sheetScroll = el('div', undefined, 'pg-scroll pg-page');
   const pieces = el('div');
   const make = el('section', undefined, 'pg-make');
   const makeTitle = el('h3', 'Make my card');
-  const makeHint = el('p', 'Main character goes in the description, scenario in the scenario field, everyone and everything else in the card’s lorebook. Kept first messages become the greetings.', 'pg-note');
+  const makeHint = el('p', 'Tears this notebook out into a card. The main character goes in the description, the scenario in the scenario field, and everyone and everything else in the card’s lorebook. Kept first messages become the greetings.', 'pg-note');
   const cardName = el('input'); cardName.type = 'text'; cardName.maxLength = 120;
   const nameField = el('label', undefined, 'pg-field'); nameField.append(el('span', 'Card name'), cardName);
   const looks = el('input'); looks.type = 'checkbox';
@@ -300,7 +356,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   resendButton.addEventListener('click', () => void act(async () => { const cast = await rpc.request<CastStatus>('sendLooks'); castNews(cast, ''); }));
 
   // ── Settings ──
-  const settingsScroll = el('div', undefined, 'pg-scroll');
+  const settingsScroll = el('div', undefined, 'pg-scroll pg-page');
   const connection = el('select');
   const thinking = el('select');
   for (const [value, label] of [['light', 'Light (quick think, the default)'], ['off', 'Off'], ['inherit', 'Use the connection’s own setting']]) { const o = el('option', label); o.value = value; thinking.append(o); }
@@ -310,7 +366,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const startOver = el('button', 'Start over', 'pg-btn'); startOver.type = 'button';
   let armed: ReturnType<typeof setTimeout> | null = null;
   startOver.addEventListener('click', () => {
-    if (!armed) { startOver.textContent = 'Press again to clear the chat and Sheet'; armed = setTimeout(() => { armed = null; startOver.textContent = 'Start over'; }, 4000); return; }
+    if (!armed) { startOver.textContent = 'Press again to clear the chat and notebook'; armed = setTimeout(() => { armed = null; startOver.textContent = 'Start over'; }, 4000); return; }
     clearTimeout(armed); armed = null; startOver.textContent = 'Start over';
     void act(() => rpc.request<Session>('startOver', { mode: session?.mode ?? 'full' }).then(s => { session = s; cardName.value = ''; makeStatus.textContent = ''; settingsNotify('Started over. Cards you already made are still in Lumiverse.'); show('chat'); }));
   });
@@ -318,8 +374,8 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     field('Model connection', connection, 'The model Paige talks with. It doesn’t have to be your story model.'),
     field('Thinking', thinking, 'How long the model thinks before each reply. Light keeps Paige quick.'),
     el('div', undefined, 'pg-row'), settingsStatus,
-    el('hr'), el('p', 'Start a new card from scratch. The old chat is kept in Paige’s storage, and cards you already made stay in Lumiverse.', 'pg-note'), startOver,
-    el('p', 'Paige and her interview are by Deiomo (deiomo.github.io), used with permission.', 'pg-note'),
+    el('hr'), el('p', 'Start a fresh notebook for a new card. The old chat is kept in Paige’s storage, and cards you already made stay in Lumiverse.', 'pg-note'), startOver,
+    el('p', 'Paige and her interview are by Deiomo (deiomo.github.io), used with permission.', 'pg-note pg-credit'),
   );
   settingsScroll.children[2].append(saveSettings);
   views.settings.append(settingsScroll);
@@ -352,16 +408,23 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (action === 'retry' && session && session.turns[session.turns.length - 1]?.role === 'assistant' && session.turns.length > 1) session.turns.pop();
     renderLog();
     const node = el('div', undefined, 'pg-msg pg-paige');
-    node.append(el('p', 'Paige is writing…', 'pg-working'));
-    log.append(node); log.scrollTop = log.scrollHeight;
-    streaming = { node, text: '' };
+    const working = el('p', 'Paige is writing…', 'pg-working'); working.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg>'); node.append(working);
+    // Room below the reply, so its start can sit at the top of the page before there's much written.
+    const room = el('div'); room.style.height = `${log.clientHeight}px`; room.setAttribute('aria-hidden', 'true');
+    log.append(node, room);
+    // Show the start of her reply (with the end of your note above it) and leave the scroll alone after that,
+    // so a long reply can be read from the top while it's still coming in.
+    log.scrollTop = Math.max(0, node.offsetTop - 56);
+    streaming = { node, text: '' }; keepReading = true;
+    // On a phone, put the keyboard away so the whole page is there to read.
+    if (matchMedia?.('(pointer: coarse)').matches) box.blur();
     update(); notify('');
     try {
       const result = await rpc.request<{ session: Session; stopped: boolean; cutOff: boolean }>(action, action === 'send' ? { text } : {}, partial => {
         if (!streaming) return;
-        const near = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+        const keep = log.scrollTop;
         streaming.text = partial; streaming.node.replaceChildren(); message(streaming.node, partial);
-        if (near) log.scrollTop = log.scrollHeight;
+        log.scrollTop = keep;
       });
       session = result.session;
       if (result.cutOff) notify('Paige’s reply hit the length limit and was cut off. Press Retry, or ask her to finish.');
@@ -391,29 +454,31 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     }, options.castPollMs ?? 3000);
   }
 
-  function renderLog() {
+  /** Redraws the chat. It stays where you were reading unless you were already at the bottom, or toBottom asks. */
+  function renderLog(toBottom = false) {
+    const wasBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40, keep = log.scrollTop;
     log.replaceChildren();
     if (!session) return;
     const lastSaved = session.turns.length - 1;
     session.turns.forEach((turn, index) => {
       const node = el('div', undefined, `pg-msg ${turn.role === 'user' ? 'pg-user' : 'pg-paige'}`);
-      if (turn.role === 'user') node.textContent = turn.content;
+      if (turn.role === 'user') { node.textContent = turn.content; node.style.setProperty('--pg-tilt', ['.6deg', '-.5deg', '.3deg'][index % 3]); }
       else {
         message(node, turn.content);
-        if (turn.saved?.length) node.append(el('div', turn.saved.join(' · ') + ' — see the Sheet tab.', 'pg-saved'));
-        if (index === lastSaved && Date.now() - turn.at < 4000) node.querySelectorAll('.pg-ticket').forEach(t => t.classList.add('pg-new'));
+        if (turn.saved?.length) node.append(el('div', turn.saved.join(', ') + '. It’s in your notebook.', 'pg-saved'));
+        if (index === lastSaved && Date.now() - turn.at < 4000) node.querySelectorAll('.pg-card').forEach(t => t.classList.add('pg-new'));
       }
       log.append(node);
     });
-    log.scrollTop = log.scrollHeight;
+    log.scrollTop = toBottom || (wasBottom && !keepReading) ? log.scrollHeight : keep;
   }
 
   function piece(block: Block): HTMLDetailsElement {
-    const box = el('details', undefined, 'pg-piece');
-    const head = el('summary'); head.append(el('span', block.name || block.type));
-    if (block.edited) head.append(el('span', 'edited by you', 'pg-note'));
+    const box = el('details', undefined, 'pg-card');
+    const head = el('summary'); head.append(el('span', block.name || block.type, 'pg-card-name'));
+    if (block.edited) head.append(el('span', 'edited by you', 'pg-card-tag'));
     const inner = el('div', undefined, 'pg-inner');
-    const pre = el('pre', block.body);
+    const pre = el('div'); sheetBody(pre, block.body);
     const edit = el('button', 'Edit', 'pg-btn'); edit.type = 'button';
     const del = el('button', 'Delete', 'pg-btn'); del.type = 'button';
     const actions = el('div', undefined, 'pg-row'); actions.append(edit, del);
@@ -448,7 +513,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     const open = new Set([...pieces.querySelectorAll<HTMLDetailsElement>('details[open]')].map(d => d.dataset.id));
     pieces.replaceChildren();
     const blocks = session?.blocks ?? [];
-    if (!blocks.length) pieces.append(el('p', 'Nothing here yet. Every piece Paige finishes lands on this Sheet.', 'pg-empty'));
+    if (!blocks.length) pieces.append(el('p', 'Nothing here yet. Every piece Paige finishes gets taped in here.', 'pg-empty'));
     for (const type of TYPE_ORDER) {
       const group = blocks.filter(b => b.type === type);
       if (!group.length) continue;
@@ -464,7 +529,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     makeButton.textContent = session?.card ? `Update “${session.card.name}”` : 'Make my card';
     resendButton.hidden = !session?.card;
     const count = blocks.filter(b => b.type !== 'First message').length;
-    tabButtons.sheet.textContent = count ? `Sheet (${count})` : 'Sheet';
+    tabButtons.sheet.textContent = count ? `Notebook (${count})` : 'Notebook';
   }
 
   function update() {
@@ -487,7 +552,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     (connection.firstChild as HTMLOptionElement).value = '';
     for (const c of snapshot.connections) { const o = el('option', `${c.name} · ${c.model}`); o.value = c.id; connection.append(o); }
     connection.value = snapshot.settings.connectionId; thinking.value = snapshot.settings.thinking;
-    render();
+    renderLog(true); renderSheet(); update();
     const missing = (Object.entries(snapshot.permissions) as [string, boolean][]).filter(([, ok]) => !ok).map(([p]) => p.replace('_', ' '));
     if (!snapshot.settings.connectionId) { show('settings'); settingsNotify('Pick the model connection Paige should use, then save.'); }
     if (missing.length) notify(`Paige needs these permissions in Extensions: ${missing.join(', ')}.`, true);

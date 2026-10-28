@@ -17,7 +17,7 @@ export function paigeRules(): string {
   let text: string = CARD.description;
   text = replaceOnce(text,
     '- Then tell {{user}}: scroll up and review each block, and where each type goes (see Job).',
-    '- Then tell {{user}} to look over each piece on the Sheet tab (they can edit or delete pieces there), and that the Make my card button puts each type where it goes (see Job).');
+    '- Then tell {{user}} to look over each piece in the Notebook tab (they can edit or delete pieces there), and that the Make my card button puts each type where it goes (see Job).');
   text = replaceOnce(text,
     '- Paige will ask {{user}} if they want her to draft a few first messages for their scenario using what was built.\n',
     '- Paige will ask {{user}} if they want her to draft a few first messages for their scenario using what was built.\n- Each first message is its own code block labeled First message. Never write {{user}}\'s actions, words, thoughts or feelings in a first message.\n');
@@ -50,14 +50,14 @@ const MODE_NOTES: Record<Mode, string> = {
   quick: `### Interview mode: quick
 - After Setup and the pitch, for the piece {{user}} picked, don't interview section by section. Draft every section yourself from the pitch and what already exists, in the current style, as if {{user}} said "you decide" to each, and output the whole block once.
 - Then go through only the weak, generic or guessed spots, one or two per message: say what you guessed and why it matters, offer a sharper version, ask keep or change. Push back the same way you would in a full interview.
-- Whenever something changes, output the whole updated block again (same label and Name) so the Sheet gets the new version.
+- Whenever something changes, output the whole updated block again (same label and Name) so the notebook gets the new version.
 - NSFW sections follow the NSFW setting as usual. {{user}} can switch back to the full interview on the panel.`,
 };
 
 export function appNotes(mode: Mode): string {
   return `### App notes (Paige is running inside the Paige extension)
-- Every finished piece goes onto {{user}}'s Sheet the moment you output its code block. Never ask {{user}} to copy or paste anything.
-- The Sheet below is the saved version of every piece. If {{user}} edited a piece there, their version wins. Use it to keep names consistent even after older messages are gone.
+- Every finished piece gets taped into {{user}}'s notebook (the Notebook tab on their panel) the moment you output its code block. When you or {{user}} say "the sheet", that's this notebook. Never ask {{user}} to copy or paste anything.
+- The notebook below is the saved version of every piece. If {{user}} edited a piece there, their version wins. Use it to keep names consistent even after older messages are gone.
 - Block format the app reads: open a code fence, put the type label alone on the first line inside it, then the sheet format. Labels: ${BLOCK_TYPES.join(', ')}. Example:
 \`\`\`
 Side character
@@ -75,8 +75,8 @@ ${MODE_NOTES[mode]}`;
 export function sheetText(blocks: Block[]): string {
   const pieces = blocks.filter(b => b.type !== 'First message');
   const firsts = blocks.filter(b => b.type === 'First message');
-  if (!pieces.length && !firsts.length) return '### The Sheet\n(empty so far)';
-  return ['### The Sheet (saved pieces, newest version of each)', ...pieces.map(fence), ...(firsts.length ? [`First messages saved so far: ${firsts.length}.`] : [])].join('\n\n');
+  if (!pieces.length && !firsts.length) return '### The notebook\n(empty so far)';
+  return ['### The notebook (saved pieces, newest version of each)', ...pieces.map(fence), ...(firsts.length ? [`First messages saved so far: ${firsts.length}.`] : [])].join('\n\n');
 }
 
 /** The greeting, minus the parts that only applied when Paige ran as a plain card (copy-paste, blank preset, empty persona, the other card). */
@@ -84,7 +84,7 @@ export function greeting(mode: Mode): string {
   let text: string = CARD.first_mes;
   text = replaceOnce(text,
     'Every finished piece comes out as its own code block for you to copy and paste your card or lorebook. Or you can link me your own card or lorebook and we keep building on it.',
-    'Every finished piece gets pinned to your Sheet, and when we\'re done you hit Make my card and the whole thing gets built for you. Or paste me your own card or lorebook and we keep building on it.');
+    'Every finished piece gets taped into your notebook, and when we\'re done you hit Make my card and the whole thing gets built for you. Or paste me your own card or lorebook and we keep building on it.');
   const from = text.indexOf(' Also remember to turn off any summarizing extensions'), to = text.indexOf('technical difficulties."');
   if (from < 0 || to < from) throw new Error('Paige greeting edit did not match: setup note');
   text = text.slice(0, from) + '"' + text.slice(to + 'technical difficulties."'.length);
@@ -115,7 +115,7 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
   const trimmed = kept.length < input.turns.length;
   const system = [paigeRules(), appNotes(input.mode), exampleText(), sheetText(input.blocks)].join('\n\n');
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
-  if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is on the Sheet above.)' });
+  if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.
   for (const turn of kept) messages.push({ role: turn.role, content: turn.content });
   if (messages[1]?.role === 'assistant') messages.splice(1, 0, { role: 'user', content: '(The user opened the help desk.)' });

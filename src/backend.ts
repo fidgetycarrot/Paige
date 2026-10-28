@@ -100,7 +100,7 @@ export function setupBackend(api: SpindleAPI) {
       }
       if (r.action === 'editBlock') {
         const block = session().blocks.find(b => b.id === input.id);
-        if (!block) throw new Error('That piece is no longer on the Sheet.');
+        if (!block) throw new Error('That piece is no longer in the notebook.');
         const body = text(input.body, 'piece text (maximum 40,000 characters)', 40_000);
         if (!body) throw new Error('A piece can\'t be empty. Use Delete instead.');
         block.body = body; block.edited = true; block.updatedAt = Date.now();
@@ -191,9 +191,9 @@ export function setupBackend(api: SpindleAPI) {
       if (r.action === 'makeCard') {
         for (const permission of ['characters', 'world_books']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions to make the card.`);
         const current = session();
-        if (!current.blocks.some(b => b.type !== 'First message')) throw new Error('The Sheet is empty. Build something with Paige first.');
+        if (!current.blocks.some(b => b.type !== 'First message')) throw new Error('The notebook is empty. Build something with Paige first.');
         const plan = planCard(current.blocks, { name: typeof input.name === 'string' ? input.name : '' });
-        if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the Sheet.');
+        if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
         const mark = { paige: { sessionId: current.id } };
         // The card from this session, if it's still there, gets updated instead of made twice.
         const old = current.card ? await api.characters.get(current.card.characterId, userId).catch(() => null) : null;
@@ -242,7 +242,7 @@ export function setupBackend(api: SpindleAPI) {
       /** Shares everyone's looks, then asks LumiCast to turn them into Lumi Studio characters. LumiCast does the rest in the background. */
       async function sendLooks(current: Session, cardName: string): Promise<CastStatus> {
         const looks = looksFrom(current.blocks);
-        if (!looks.length) return { state: 'skipped', message: 'No one on the Sheet has a look section, so nothing went to LumiCast.' };
+        if (!looks.length) return { state: 'skipped', message: 'No one in the notebook has a look section, so nothing went to LumiCast.' };
         const pool = (api as unknown as { rpcPool?: { sync?: (e: string, v: unknown, p?: { requires?: string[] }) => string; read?: (e: string) => Promise<unknown> } }).rpcPool;
         if (typeof pool?.sync !== 'function' || typeof pool.read !== 'function') return { state: 'failed', message: 'This Lumiverse version can\'t share data between extensions.' };
         pool.sync('cast', { version: 1, sessionId: current.id, sentAt: Date.now(), userId: userId ?? '', card: cardName, characters: looks }, { requires: [] });

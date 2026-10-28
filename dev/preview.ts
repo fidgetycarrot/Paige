@@ -25,6 +25,21 @@ Usual clothes: oilskin coat, rope-burned gloves
 \`\`\`
 
 "Next up: Current status. Where is he right now, and how does he feel about it? Example: **Docked illegally at Pier Nine, pretending the Guild hasn't noticed.**"`,
+  `*Paige taps the pen against her teeth.* "Pier Nine. Good. That's a place with teeth: the Guild can walk down that dock any morning it likes."
+
+"Here's what I've got so far, so you can see the shape of him:"
+
+- He's broke, and the boat is the only thing he owns outright.
+- The Guild knows he's there. They're waiting for him to slip.
+- He sleeps aboard, because a room in town costs coin he doesn't have.
+
+"Now the fun part. **Backstory.** Only the events that explain who he is *now*. I don't want a résumé. I want the night it went wrong."
+
+"Example, tuned to your guy: **He ran the Hesk Narrows in fog to save a Guild cutter, and the Guild stripped his license for 'reckless piloting' the next week.** That's a grudge with a date on it."
+
+"So. What happened to Jory? One or two events. The kind he still thinks about at three in the morning."
+
+*She slides a fresh mug of tea across the table and waits.*`,
 ];
 const store = new Map<string, unknown>();
 let listener: (payload: unknown, userId?: string, session?: string) => void = () => {};
