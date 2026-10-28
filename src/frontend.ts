@@ -548,6 +548,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       if (closed) return;
       const s = await rpc.request<LumiCastStatus | null>('lumicastStatus').catch(() => null);
       if (!s) { if (++quiet > 20 && castTimer) { clearInterval(castTimer); castTimer = null; } return; }
+      if (s.error) { makeNotify([before, `LumiCast couldn’t start: ${s.error}`].filter(Boolean).join('\n'), true); if (castTimer) { clearInterval(castTimer); castTimer = null; } return; }
       const clashes = s.finished.filter(f => f.ok && /^saved as /.test(f.message));
       const lines = s.finished.map(f => `${f.ok ? 'In Lumi Studio' : 'Didn’t make it'}: ${f.name}${f.ok && !clashes.includes(f) ? '' : ` (${f.message})`}`);
       // A name that was already taken is easy to forget about, so it's said again at the end.

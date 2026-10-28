@@ -875,6 +875,15 @@ function setup(ctx, options = {}) {
         }
         return;
       }
+      if (s.error) {
+        makeNotify([before, `LumiCast couldn’t start: ${s.error}`].filter(Boolean).join(`
+`), true);
+        if (castTimer) {
+          clearInterval(castTimer);
+          castTimer = null;
+        }
+        return;
+      }
       const clashes = s.finished.filter((f) => f.ok && /^saved as /.test(f.message));
       const lines = s.finished.map((f) => `${f.ok ? "In Lumi Studio" : "Didn’t make it"}: ${f.name}${f.ok && !clashes.includes(f) ? "" : ` (${f.message})`}`);
       if (!s.running && clashes.length)
