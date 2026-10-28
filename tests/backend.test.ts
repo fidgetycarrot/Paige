@@ -159,4 +159,14 @@ describe('Paige backend', () => {
     // It survives a reload: the stored session is the loaded one.
     expect((host.store.get('session.json') as { id: string }).id).toBe(backup.session.id);
   });
+  test('send looks again can send just the picked people', async () => {
+    const host = fakeHost(['```\nMain character\nName: Ivy\n## Appearance & vibe\nTall.\n```\n```\nSide character\nName: Ash\n## Look\nShort.\n```']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });
+    await host.call('send', { text: 'go' });
+    await host.call('makeCard', { sendLooks: false });
+    const sent = await host.call<{ state: string; message: string }>('sendLooks', { only: ['ash'] });
+    expect(sent.state).toBe('started');
+    expect((host.pool.get('paige.cast') as { characters: { name: string }[] }).characters.map(c => c.name)).toEqual(['Ash']);
+    expect((await host.call<{ state: string }>('sendLooks', { only: [] })).state).toBe('skipped');
+  });
 });

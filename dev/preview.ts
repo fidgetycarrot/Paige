@@ -44,7 +44,7 @@ Usual clothes: oilskin coat, rope-burned gloves
 const store = new Map<string, unknown>();
 let listener: (payload: unknown, userId?: string, session?: string) => void = () => {};
 const panelHandlers: ((m: unknown) => void)[] = [];
-let n = 0;
+let n = 0; let castStart = 0;
 const api = {
   permissions: { has: () => true },
   onFrontendMessage: (fn: typeof listener) => { listener = fn; return () => {}; },
@@ -64,7 +64,15 @@ const api = {
   characters: { get: async () => null, create: async (i: object) => ({ ...i, id: `c${++n}` }), update: async () => ({}) },
   world_books: { get: async () => null, create: async (i: object) => ({ ...i, id: `b${++n}` }), entries: { list: async () => ({ data: [], total: 0 }), create: async () => ({}) } },
   personas: { get: async () => null, create: async (i: object) => ({ ...i, id: `p${++n}` }) },
-  rpcPool: { sync: () => 'paige.cast', read: async (e: string) => { if (e === 'lumicast.paige.start') return { ok: true }; return { sessionId: 'x' }; } },
+  rpcPool: { sync: () => 'paige.cast', read: async (e: string) => {
+    if (e === 'lumicast.paige.start') { castStart = Date.now(); return { ok: true }; }
+    // A pretend LumiCast run: Jory works, Wes hits a rate limit and fails, Mara's name is taken.
+    const t = (Date.now() - castStart) / 1000, sid = JSON.parse(String(store.get('session.json') ? JSON.stringify(store.get('session.json')) : '{}')).id;
+    const names = ['Jory Kett', 'Mara Venn', 'Wes'];
+    const finished = [{ name: 'Jory Kett', ok: true, message: 'added' }, { name: 'Mara Venn', ok: true, message: 'saved as “Mara Venn 2” because Lumi Studio already had a Mara Venn; give one of them a new name there' }, { name: 'Wes', ok: false, message: 'LumiCast model request failed during trait extraction (openrouter / anthropic/claude-opus-5.5; RATE_LIMIT; HTTP 429). Wait before retrying or check the provider quota.' }];
+    const done = Math.min(3, Math.floor(t / 2));
+    return { sessionId: sid, names, total: 3, done, running: done < 3, current: names[done], stage: done === 2 ? 'The provider says to slow down. Trying again in 20 seconds…' : 'Step 2 of 3: checking 14 tags on Danbooru…', startedAt: castStart, updatedAt: Date.now(), finished: finished.slice(0, done) };
+  } },
 };
 store.set('settings.json', { connectionId: 'c1', thinking: 'light' });
 setupBackend(api as never);

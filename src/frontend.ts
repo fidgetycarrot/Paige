@@ -1,5 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
-import { BLOCK_TYPES, labelOf, type Block, type BlockType, type Mode } from './blocks';
+import { BLOCK_TYPES, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
 import type { CardResult, CastStatus, LumiCastStatus, Session, Snapshot } from './contracts';
 import { MARKER_WOFF2 } from './font';
 
@@ -191,6 +191,18 @@ const STYLES = `
 .pg-note{font-size:12px;line-height:1.5;color:var(--pg-pencil)}
 /* Make my card: the page you tear out at the end. */
 .pg-make{margin-top:34px;padding-top:22px;border-top:2px dashed #a99ccc55;position:relative}
+.pg-pick{border:1px dashed var(--pg-edge);border-radius:8px;padding:4px 14px 12px;margin:12px 0}
+.pg-cast{margin-top:14px;border-left:3px solid var(--pg-violet);padding:4px 0 4px 14px;line-height:1.45}
+.pg-cast-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pg-cast-clock{margin-left:auto;color:var(--pg-pencil);font-variant-numeric:tabular-nums;font-size:13px}
+.pg-pulse{width:9px;height:9px;border-radius:50%;background:var(--pg-violet);flex-shrink:0}
+.pg-cast-row{display:flex;gap:10px;padding:4px 0}
+.pg-cast-mark{width:16px;text-align:center;flex-shrink:0}
+.pg-cast-row>div{display:flex;flex-direction:column;min-width:0}
+.pg-cast-name{font-weight:600}
+.pg-cast-detail{font-size:13px;color:var(--pg-pencil);overflow-wrap:anywhere}
+.pg-ok .pg-cast-mark{color:#8fdca2}.pg-bad .pg-cast-mark,.pg-bad .pg-cast-detail{color:#ff9db1}.pg-now .pg-cast-mark{color:var(--pg-violet)}.pg-wait{opacity:.6}
+.pg-cast-warn{font-size:13px;color:#f0b866;margin:8px 0 0}
 .pg-make::before{content:'✂';position:absolute;top:-15px;left:-4px;font-size:18px;color:var(--pg-pencil);background:var(--pg-paper);padding:0 6px}
 .pg-make h3{font:400 24px/1.2 var(--pg-hand);color:var(--pg-violet);margin:0 0 6px;transform:rotate(-1deg);transform-origin:left}
 .pg-field{display:flex;flex-direction:column;gap:6px;margin:14px 0}
@@ -212,7 +224,7 @@ const STYLES = `
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{padding-top:6px}
 @media (max-width:759px){.pg-full-btn{display:none}}
 @media (max-width:480px){.pg-app{--pg-m:26px}.pg-top{padding:12px 14px 2px}.pg-sub{display:none}.pg-log{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-scroll{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-compose{padding:8px 12px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:6px 10px 0}.pg-mode{margin-left:0}}
-@media (prefers-reduced-motion:no-preference){.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
+@media (prefers-reduced-motion:no-preference){.pg-pulse{animation:pg-pulse 1.2s ease-in-out infinite}@keyframes pg-pulse{50%{opacity:.25;transform:scale(.7)}}.pg-now .pg-cast-mark{display:inline-block;animation:pg-scribble 1.1s ease-in-out infinite}.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
 `;
 
 const TYPE_ORDER: BlockType[] = [...BLOCK_TYPES];
@@ -392,7 +404,11 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const resendButton = el('button', 'Send looks again', 'pg-btn'); resendButton.type = 'button';
   const makeStatus = el('div', undefined, 'pg-status'); makeStatus.setAttribute('role', 'status');
   const makeRow = el('div', undefined, 'pg-row'); makeRow.append(makeButton, resendButton);
-  make.append(makeTitle, makeHint, nameField, looksRow, makeRow, makeStatus);
+  // Send looks again: pick who. Anyone who didn't make it last time starts ticked.
+  const pick = el('div', undefined, 'pg-pick'); pick.hidden = true;
+  // LumiCast's progress, one line per person.
+  const cast = el('div', undefined, 'pg-cast'); cast.hidden = true; cast.setAttribute('role', 'status');
+  make.append(makeTitle, makeHint, nameField, looksRow, makeRow, pick, makeStatus, cast);
   sheetScroll.append(pieces, make);
   views.sheet.append(sheetScroll);
   makeButton.addEventListener('click', () => void act(async () => {
@@ -404,9 +420,30 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       result.personaName ? `Persona “${result.personaName}” is ready.` : '', result.personaNote, ...result.notes,
     ].filter(Boolean);
     makeNotify(made.join('\n'));
-    if (result.cast) castNews(result.cast, made.join('\n'));
+    if (result.cast) castNews(result.cast, made.join('\n'), looksFrom(result.session.blocks).map(l => l.name));
   }));
-  resendButton.addEventListener('click', () => void act(async () => { const cast = await rpc.request<CastStatus>('sendLooks'); castNews(cast, ''); }));
+  resendButton.addEventListener('click', () => { if (pick.hidden) openPick(); else pick.hidden = true; });
+  function openPick() {
+    const people = looksFrom(session?.blocks ?? []);
+    pick.replaceChildren(el('p', 'Who should LumiCast send to Lumi Studio? Anyone already there gets a copy marked “needs a new name”, so only tick the ones that are missing or that you changed.', 'pg-note'));
+    if (!people.length) { pick.append(el('p', 'No one in the notebook has a look section yet.', 'pg-note')); pick.hidden = false; return; }
+    const boxes = people.map(person => {
+      const box = el('input'); box.type = 'checkbox'; box.checked = failedLast.has(person.name.toLowerCase());
+      const row = el('label', undefined, 'pg-check'); row.append(box, el('span', `${person.name}${person.kind === 'persona' ? ' (your persona)' : ''}${failedLast.has(person.name.toLowerCase()) ? ' — didn’t make it last time' : ''}`));
+      pick.append(row); return [person.name, box] as const;
+    });
+    const go = el('button', 'Send these', 'pg-btn pg-primary'); go.type = 'button';
+    const cancel = el('button', 'Cancel', 'pg-btn'); cancel.type = 'button';
+    const row = el('div', undefined, 'pg-row'); row.append(go, cancel); pick.append(row);
+    cancel.addEventListener('click', () => { pick.hidden = true; });
+    go.addEventListener('click', () => void act(async () => {
+      const only = boxes.filter(([, box]) => box.checked).map(([name]) => name);
+      if (!only.length) { makeNotify('Tick at least one person first.', true); return; }
+      pick.hidden = true;
+      castNews(await rpc.request<CastStatus>('sendLooks', { only }), '', only);
+    }));
+    pick.hidden = false;
+  }
 
   // ── Settings ──
   const settingsScroll = el('div', undefined, 'pg-scroll pg-page');
@@ -539,23 +576,61 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     }
   }
 
-  function castNews(cast: CastStatus, before: string) {
-    makeNotify([before, cast.message].filter(Boolean).join('\n'), cast.state === 'failed');
-    if (cast.state !== 'started') return;
-    if (castTimer) clearInterval(castTimer);
-    let quiet = 0;
+  /** Who didn't make it in the last batch, so Send looks again can tick them for you. */
+  const failedLast = new Set<string>();
+  let castClock: ReturnType<typeof setInterval> | null = null;
+  const stopCast = () => { if (castTimer) clearInterval(castTimer); if (castClock) clearInterval(castClock); castTimer = castClock = null; if (!closed) update(); };
+  const minutes = (ms: number) => { const sec = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+  /** Shows LumiCast's batch as it goes: who's done, who it's on and which step, a running clock, and a warning if it goes quiet. */
+  function castNews(started: CastStatus, before: string, sent: string[] = []) {
+    makeNotify([before, started.state === 'started' ? '' : started.message].filter(Boolean).join('\n'), started.state === 'failed');
+    stopCast(); cast.hidden = true;
+    if (started.state !== 'started') return;
+    const began = Date.now();
+    let last: LumiCastStatus | null = null, quiet = 0;
+    const draw = () => {
+      if (closed) return;
+      const s = last;
+      const names = s?.names?.length ? s.names : sent;
+      const done = new Map((s?.finished ?? []).map(f => [f.name.toLowerCase(), f]));
+      const running = !s || s.running;
+      const lastWord = s?.updatedAt ? Date.now() - s.updatedAt : Date.now() - began;
+      cast.replaceChildren();
+      const head = el('div', undefined, 'pg-cast-head');
+      if (running) head.append(el('span', undefined, 'pg-pulse'));
+      head.append(el('strong', running ? `LumiCast is working: ${s?.done ?? 0} of ${s?.total ?? names.length} done` : `LumiCast finished ${s!.done} of ${s!.total}`), el('span', minutes((s?.updatedAt && !running ? s.updatedAt : Date.now()) - (s?.startedAt ?? began)), 'pg-cast-clock'));
+      cast.append(head);
+      for (const name of names) {
+        const f = done.get(name.toLowerCase()), current = running && s?.current?.toLowerCase() === name.toLowerCase();
+        const row = el('div', undefined, `pg-cast-row ${f ? (f.ok ? 'pg-ok' : 'pg-bad') : current ? 'pg-now' : 'pg-wait'}`);
+        row.append(el('span', f ? (f.ok ? '✓' : '✗') : current ? '✎' : '○', 'pg-cast-mark'));
+        const text = el('div'); text.append(el('span', name, 'pg-cast-name'));
+        const clash = f?.ok && /^saved as /.test(f.message);
+        const detail = f ? (f.ok ? (clash ? f.message : 'in Lumi Studio') : f.message) : current ? (s?.stage || 'working…') : 'waiting';
+        text.append(el('span', detail, 'pg-cast-detail'));
+        row.append(text); cast.append(row);
+      }
+      if (running && lastWord > 150_000) cast.append(el('p', `LumiCast hasn’t said anything for ${minutes(lastWord)}. It may be stuck. Reloading Lumiverse stops it, and nothing already in Lumi Studio is lost.`, 'pg-cast-warn'));
+      if (!running) {
+        const failed = (s?.finished ?? []).filter(f => !f.ok), clashes = (s?.finished ?? []).filter(f => f.ok && /^saved as /.test(f.message));
+        if (failed.length) cast.append(el('p', `Press Send looks again to try ${failed.length === 1 ? failed[0].name : 'the ones that didn’t make it'} again. ${failed.length === 1 ? 'It’s' : 'They’re'} ticked for you.`, 'pg-cast-warn'));
+        if (clashes.length) cast.append(el('p', `${clashes.length === 1 ? 'One name was' : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`, 'pg-cast-warn'));
+      }
+      cast.hidden = false;
+    };
+    draw();
+    castClock = setInterval(draw, 1000);
     castTimer = setInterval(async () => {
       if (closed) return;
       const s = await rpc.request<LumiCastStatus | null>('lumicastStatus').catch(() => null);
-      if (!s) { if (++quiet > 20 && castTimer) { clearInterval(castTimer); castTimer = null; } return; }
-      if (s.error) { makeNotify([before, `LumiCast couldn’t start: ${s.error}`].filter(Boolean).join('\n'), true); if (castTimer) { clearInterval(castTimer); castTimer = null; } return; }
-      const clashes = s.finished.filter(f => f.ok && /^saved as /.test(f.message));
-      const lines = s.finished.map(f => `${f.ok ? 'In Lumi Studio' : 'Didn’t make it'}: ${f.name}${f.ok && !clashes.includes(f) ? '' : ` (${f.message})`}`);
-      // A name that was already taken is easy to forget about, so it's said again at the end.
-      if (!s.running && clashes.length) lines.push(`${clashes.length === 1 ? 'One name was' : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`);
-      const head = s.running ? `LumiCast: ${s.done} of ${s.total} done${s.current ? `, working on ${s.current}` : ''}…` : `LumiCast finished ${s.done} of ${s.total}.`;
-      makeNotify([before, head, ...lines].filter(Boolean).join('\n'), !s.running && (s.finished.some(f => !f.ok) || clashes.length > 0));
-      if (!s.running && castTimer) { clearInterval(castTimer); castTimer = null; }
+      if (!s) { if (++quiet > 40) { stopCast(); cast.append(el('p', 'Lost track of LumiCast. Check Lumi Studio to see who arrived.', 'pg-cast-warn')); } return; }
+      quiet = 0;
+      if (s.error) { stopCast(); cast.hidden = true; makeNotify([before, `LumiCast couldn’t start: ${s.error}`].filter(Boolean).join('\n'), true); return; }
+      last = s;
+      if (!s.running) {
+        failedLast.clear(); for (const f of s.finished) if (!f.ok) failedLast.add(f.name.toLowerCase());
+        draw(); stopCast();
+      }
     }, options.castPollMs ?? 3000);
   }
 
@@ -644,7 +719,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     for (const b of chips.querySelectorAll('button')) (b as HTMLButtonElement).disabled = working;
     modeButtons.forEach((b, i) => b.setAttribute('aria-pressed', String((session?.mode ?? 'full') === (['full', 'quick'] as Mode[])[i])));
     makeButton.disabled = working || !session?.blocks.some(b => b.type !== 'First message');
-    resendButton.disabled = working; saveSettings.disabled = working; startOver.disabled = working; saveBackup.disabled = working; loadBackup.disabled = working; confirmLoad.disabled = working;
+    resendButton.disabled = working || !!castTimer; saveSettings.disabled = working; startOver.disabled = working; saveBackup.disabled = working; loadBackup.disabled = working; confirmLoad.disabled = working;
   }
 
   function render() { renderLog(); renderSheet(); update(); }
@@ -670,5 +745,5 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; document.removeEventListener('keydown', onKey); offActivate(); overlay?.destroy(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); overlay?.destroy(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }

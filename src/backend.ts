@@ -249,7 +249,7 @@ export function setupBackend(api: SpindleAPI) {
         return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: plan.notes, cast, session: current } satisfies CardResult;
       }
 
-      if (r.action === 'sendLooks') return await sendLooks(session(), session().card?.name ?? '');
+      if (r.action === 'sendLooks') return await sendLooks(session(), session().card?.name ?? '', Array.isArray(input.only) ? input.only.filter((n): n is string => typeof n === 'string').slice(0, 40) : undefined);
       if (r.action === 'lumicastStatus') {
         const pool = (api as unknown as { rpcPool?: { read?: (e: string) => Promise<unknown> } }).rpcPool;
         if (typeof pool?.read !== 'function') return null;
@@ -261,8 +261,11 @@ export function setupBackend(api: SpindleAPI) {
       throw new Error('Unknown Paige action.');
 
       /** Shares everyone's looks, then asks LumiCast to turn them into Lumi Studio characters. LumiCast does the rest in the background. */
-      async function sendLooks(current: Session, cardName: string): Promise<CastStatus> {
-        const looks = looksFrom(current.blocks);
+      /** only: send just these names (Send looks again lets you pick), so the ones already in Lumi Studio aren't copied. */
+      async function sendLooks(current: Session, cardName: string, only?: string[]): Promise<CastStatus> {
+        const wanted = only && new Set(only.map(n => n.trim().toLowerCase()));
+        const looks = looksFrom(current.blocks).filter(l => !wanted || wanted.has(l.name.trim().toLowerCase()));
+        if (wanted && !looks.length) return { state: 'skipped', message: 'Pick at least one person to send.' };
         if (!looks.length) return { state: 'skipped', message: 'No one in the notebook has a look section, so nothing went to LumiCast.' };
         const pool = (api as unknown as { rpcPool?: { sync?: (e: string, v: unknown, p?: { requires?: string[] }) => string; read?: (e: string) => Promise<unknown> } }).rpcPool;
         if (typeof pool?.sync !== 'function' || typeof pool.read !== 'function') return { state: 'failed', message: 'This Lumiverse version can\'t share data between extensions.' };

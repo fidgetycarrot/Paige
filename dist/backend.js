@@ -839,7 +839,7 @@ function setupBackend(api) {
         return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: plan.notes, cast, session: current };
       }
       if (r.action === "sendLooks")
-        return await sendLooks(session(), session().card?.name ?? "");
+        return await sendLooks(session(), session().card?.name ?? "", Array.isArray(input.only) ? input.only.filter((n) => typeof n === "string").slice(0, 40) : undefined);
       if (r.action === "lumicastStatus") {
         const pool = api.rpcPool;
         if (typeof pool?.read !== "function")
@@ -852,8 +852,11 @@ function setupBackend(api) {
         }
       }
       throw new Error("Unknown Paige action.");
-      async function sendLooks(current, cardName) {
-        const looks = looksFrom(current.blocks);
+      async function sendLooks(current, cardName, only) {
+        const wanted = only && new Set(only.map((n) => n.trim().toLowerCase()));
+        const looks = looksFrom(current.blocks).filter((l) => !wanted || wanted.has(l.name.trim().toLowerCase()));
+        if (wanted && !looks.length)
+          return { state: "skipped", message: "Pick at least one person to send." };
         if (!looks.length)
           return { state: "skipped", message: "No one in the notebook has a look section, so nothing went to LumiCast." };
         const pool = api.rpcPool;
