@@ -364,6 +364,52 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const settingsStatus = el('div', undefined, 'pg-status');
   const field = (label: string, input: HTMLElement, hint: string) => { const w = el('label', undefined, 'pg-field'); w.append(el('span', label), input, el('small', hint, 'pg-note')); return w; };
   const startOver = el('button', 'Start over', 'pg-btn'); startOver.type = 'button';
+  // ── Backups: the whole chat and notebook as a file you keep, and loading one back in ──
+  const saveBackup = el('button', 'Save a backup', 'pg-btn'); saveBackup.type = 'button';
+  const loadBackup = el('button', 'Load a backup', 'pg-btn'); loadBackup.type = 'button';
+  const picker = el('input'); picker.type = 'file'; picker.accept = '.json,application/json'; picker.hidden = true;
+  const backupStatus = el('div', undefined, 'pg-status'); backupStatus.setAttribute('role', 'status');
+  const confirmRow = el('div', undefined, 'pg-row'); confirmRow.hidden = true;
+  const confirmLoad = el('button', 'Load it', 'pg-btn pg-primary'); confirmLoad.type = 'button';
+  const cancelLoad = el('button', 'Cancel', 'pg-btn'); cancelLoad.type = 'button';
+  confirmRow.append(confirmLoad, cancelLoad);
+  let pickedBackup: unknown = null;
+  const backupNotify = (text: string, error = false) => { if (closed) return; backupStatus.textContent = text; backupStatus.dataset.error = String(error); };
+  saveBackup.addEventListener('click', () => void act(async () => {
+    const backup = await rpc.request<{ session: Session }>('exportSession');
+    const main = backup.session.blocks.find(b => b.type === 'Main character')?.name || backup.session.card?.name || 'notebook';
+    const day = new Date().toISOString().slice(0, 10);
+    const name = `Paige - ${main.replace(/[\\/:*?"<>|]+/g, '').slice(0, 60)} - ${day}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 1)], { type: 'application/json' }));
+    const link = el('a'); link.href = url; link.download = name; link.hidden = true; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const pieces = backup.session.blocks.filter(b => b.type !== 'First message').length;
+    backupNotify(`Saved “${name}”: ${backup.session.turns.length} messages and ${pieces} ${pieces === 1 ? 'piece' : 'pieces'}. It goes wherever your downloads go.`);
+  }));
+  loadBackup.addEventListener('click', () => { if (!busy) picker.click(); });
+  picker.addEventListener('change', async () => {
+    const file = picker.files?.[0]; picker.value = '';
+    if (!file) return;
+    try {
+      if (file.size > 20_000_000) throw new Error('That file is too big to be a Paige backup.');
+      let backup = JSON.parse(await file.text()) as { kind?: string; version?: number; session?: Session };
+      // Paige's own saved file (session.json) works too, as it is.
+      const bare = backup as unknown as Session;
+      if (!backup?.kind && bare?.version === 1 && Array.isArray(bare.turns) && Array.isArray(bare.blocks)) backup = { kind: 'paige-backup', version: 1, session: bare } as typeof backup;
+      if (backup?.kind !== 'paige-backup' || !backup.session) throw new Error('That file isn’t a Paige backup.');
+      pickedBackup = backup;
+      const pieces = (backup.session.blocks ?? []).filter(b => b.type !== 'First message').length;
+      backupNotify(`“${file.name}” has ${backup.session.turns?.length ?? 0} messages and ${pieces} ${pieces === 1 ? 'piece' : 'pieces'}. Loading it replaces what’s open now. What’s open now is kept in Paige’s storage.`);
+      confirmRow.hidden = false;
+    } catch (e) { pickedBackup = null; confirmRow.hidden = true; backupNotify(e instanceof SyntaxError ? 'That file isn’t a Paige backup.' : e instanceof Error ? e.message : 'That file couldn’t be read.', true); }
+  });
+  cancelLoad.addEventListener('click', () => { pickedBackup = null; confirmRow.hidden = true; backupNotify(''); });
+  confirmLoad.addEventListener('click', () => void act(async () => {
+    const s = await rpc.request<Session>('importSession', { backup: pickedBackup });
+    session = s; pickedBackup = null; confirmRow.hidden = true; cardName.value = s.card?.name ?? ''; makeStatus.textContent = '';
+    backupNotify('Loaded. You’re back where that backup left off.');
+    renderLog(true); renderSheet(); show('chat');
+  }));
   let armed: ReturnType<typeof setTimeout> | null = null;
   startOver.addEventListener('click', () => {
     if (!armed) { startOver.textContent = 'Press again to clear the chat and notebook'; armed = setTimeout(() => { armed = null; startOver.textContent = 'Start over'; }, 4000); return; }
@@ -374,10 +420,12 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     field('Model connection', connection, 'The model Paige talks with. It doesn’t have to be your story model.'),
     field('Thinking', thinking, 'How long the model thinks before each reply. Light keeps Paige quick.'),
     el('div', undefined, 'pg-row'), settingsStatus,
+    el('hr'), el('p', 'Save the whole chat and notebook as a file, so a long session is never lost, even if you reinstall Paige. Load it back in any time to pick up where you left off.', 'pg-note'), el('div', undefined, 'pg-row pg-backup'), confirmRow, backupStatus, picker,
     el('hr'), el('p', 'Start a fresh notebook for a new card. The old chat is kept in Paige’s storage, and cards you already made stay in Lumiverse.', 'pg-note'), startOver,
     el('p', 'Paige and her interview are by Deiomo (deiomo.github.io), used with permission.', 'pg-note pg-credit'),
   );
   settingsScroll.children[2].append(saveSettings);
+  settingsScroll.querySelector('.pg-backup')!.append(saveBackup, loadBackup);
   views.settings.append(settingsScroll);
   saveSettings.addEventListener('click', () => void act(async () => {
     await rpc.request('saveSettings', { connectionId: connection.value, thinking: thinking.value });
@@ -391,7 +439,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   async function act(run: () => Promise<unknown>) {
     if (busy || closed) return;
     busy = true; update();
-    try { await run(); } catch (e) { const m = e instanceof Error ? e.message : 'That didn’t work.'; notify(m, true); makeNotify(m, true); settingsNotify(m, true); }
+    try { await run(); } catch (e) { const m = e instanceof Error ? e.message : 'That didn’t work.'; notify(m, true); makeNotify(m, true); settingsNotify(m, true); backupNotify(m, true); }
     finally { busy = false; if (!closed) render(); }
   }
 
@@ -539,7 +587,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     for (const b of chips.querySelectorAll('button')) (b as HTMLButtonElement).disabled = working;
     modeButtons.forEach((b, i) => b.setAttribute('aria-pressed', String((session?.mode ?? 'full') === (['full', 'quick'] as Mode[])[i])));
     makeButton.disabled = working || !session?.blocks.some(b => b.type !== 'First message');
-    resendButton.disabled = working; saveSettings.disabled = working; startOver.disabled = working;
+    resendButton.disabled = working; saveSettings.disabled = working; startOver.disabled = working; saveBackup.disabled = working; loadBackup.disabled = working; confirmLoad.disabled = working;
   }
 
   function render() { renderLog(); renderSheet(); update(); }

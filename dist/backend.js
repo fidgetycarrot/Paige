@@ -623,10 +623,35 @@ function setupBackend(api) {
         await api.userStorage.setJson(SETTINGS, state.settings, { userId });
         return state.settings;
       }
+      if (r.action === "exportSession") {
+        return { kind: "paige-backup", version: 1, savedAt: Date.now(), session: session() };
+      }
       if (state.job && r.action !== "lumicastStatus")
         throw new Error("Paige is still writing. Wait for her, or press Stop.");
       if (r.action === "setMode") {
         session().mode = input.mode === "quick" ? "quick" : "full";
+        await persist();
+        broadcast();
+        return session();
+      }
+      if (r.action === "importSession") {
+        let backup = record(input.backup);
+        if (!("kind" in backup) && backup.version === 1 && Array.isArray(backup.turns) && Array.isArray(backup.blocks))
+          backup = { kind: "paige-backup", version: 1, session: backup };
+        if (backup.kind !== "paige-backup")
+          throw new Error("That file isn't a Paige backup.");
+        if (backup.version !== 1)
+          throw new Error("That backup is from a newer Paige. Update Paige, then load it again.");
+        const restored = readSession(backup.session);
+        if (!restored)
+          throw new Error("That backup is damaged, so nothing was loaded.");
+        if (session().turns.length > 1 || session().blocks.length) {
+          try {
+            await api.userStorage.setJson(`old/${session().id}.json`, session(), { userId });
+          } catch {}
+        }
+        delete restored.undo;
+        state.session = restored;
         await persist();
         broadcast();
         return session();

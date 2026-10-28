@@ -137,4 +137,26 @@ describe('Paige backend', () => {
     expect(after.mode).toBe('quick');
     expect(host.store.has(`old/${before.session.id}.json`)).toBe(true);
   });
+  test('a backup saves the session and loads it back, keeping what was open', async () => {
+    const host = fakeHost(['```\nSide character\nName: Ash\n## Look\nTall.\n```', 'Something else.']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });
+    await host.call('send', { text: 'go' });
+    const backup = await host.call<{ kind: string; session: { id: string; blocks: { name: string }[] } }>('exportSession');
+    expect(backup.kind).toBe('paige-backup');
+    expect(backup.session.blocks.map(b => b.name)).toEqual(['Ash']);
+    // Start over, build something else, then load the backup.
+    const fresh = await host.call<{ id: string }>('startOver', { mode: 'full' });
+    await host.call('send', { text: 'other' });
+    await expect(host.call('importSession', { backup: { kind: 'nope' } })).rejects.toThrow('isn\'t a Paige backup');
+    await expect(host.call('importSession', { backup: { kind: 'paige-backup', version: 2, session: backup.session } })).rejects.toThrow('newer Paige');
+    const loaded = await host.call<{ id: string; blocks: { name: string }[]; turns: unknown[] }>('importSession', { backup: JSON.parse(JSON.stringify(backup)) });
+    expect(loaded.id).toBe(backup.session.id);
+    expect(loaded.blocks.map(b => b.name)).toEqual(['Ash']);
+    expect(host.store.has(`old/${fresh.id}.json`)).toBe(true);
+    // Paige's raw session.json loads too.
+    const raw = await host.call<{ id: string }>('importSession', { backup: JSON.parse(JSON.stringify(backup.session)) });
+    expect(raw.id).toBe(backup.session.id);
+    // It survives a reload: the stored session is the loaded one.
+    expect((host.store.get('session.json') as { id: string }).id).toBe(backup.session.id);
+  });
 });
