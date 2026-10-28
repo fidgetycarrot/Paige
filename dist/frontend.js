@@ -372,7 +372,6 @@ var STYLES = `
 .pg-full-btn:hover{color:var(--pg-ink);border-color:var(--pg-violet)}
 .pg-full-btn svg{width:16px;height:16px}
 /* Full screen: Paige over the whole window, with a comfortable reading width and a little bigger type. */
-.pg-overlay-root{position:fixed;inset:0;z-index:10000;background:#100e15;display:flex;justify-content:center}
 .pg-app.pg-full{width:100%;max-width:900px;font-size:16px;--pg-row:28px;--pg-m:56px;border-left:1px solid var(--pg-edge);border-right:1px solid var(--pg-edge)}
 .pg-app.pg-full .pg-top{padding-top:18px}
 .pg-app.pg-full .pg-title{font-size:40px}
@@ -408,9 +407,9 @@ function setup(ctx, options = {}) {
   const removeStyle = ctx.dom.addStyle(STYLES);
   const app = el("div", undefined, "pg-app");
   tab.root.append(app);
-  let overlay = null;
+  let modal = null;
   let full = false;
-  const canFull = typeof ctx.ui.mountApp === "function";
+  const canFull = typeof ctx.ui.showModal === "function";
   const fullPref = () => {
     try {
       return localStorage.getItem("paige.full") === "1";
@@ -423,13 +422,32 @@ function setup(ctx, options = {}) {
       return;
     const places = [...app.querySelectorAll(".pg-log, .pg-scroll")].map((node) => [node, node.scrollTop]);
     if (on) {
-      overlay ??= ctx.ui.mountApp({ position: "app-overlay", className: "pg-overlay" });
-      overlay.root.classList.add("pg-overlay-root");
-      overlay.root.append(app);
-      overlay.setVisible(true);
+      try {
+        modal = ctx.ui.showModal({ title: "Paige", width: 4000, maxHeight: 4000, persistent: true });
+      } catch {
+        notify("Lumiverse wouldn’t open a full-screen window for Paige.", true);
+        return;
+      }
+      const body = modal.root.parentElement, box = body?.parentElement;
+      if (box && body) {
+        box.style.height = box.style.maxHeight;
+        box.style.background = "#100e15";
+        box.firstElementChild?.style.setProperty("display", "none");
+        Object.assign(body.style, { padding: "0", overflow: "hidden", display: "flex", flexDirection: "column", minHeight: "0" });
+      }
+      Object.assign(modal.root.style, { flex: "1", minHeight: "0", display: "flex", justifyContent: "center" });
+      modal.root.append(app);
+      modal.onDismiss(() => {
+        if (full) {
+          modal = null;
+          setFull(false);
+        }
+      });
     } else {
       tab.root.append(app);
-      overlay?.setVisible(false);
+      const open = modal;
+      modal = null;
+      open?.dismiss();
     }
     full = on;
     app.classList.toggle("pg-full", on);
@@ -574,7 +592,7 @@ function setup(ctx, options = {}) {
     if (full) {
       const keepFull = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
       app.style.minHeight = "0";
-      app.style.height = `${Math.round(view?.height ?? window.innerHeight)}px`;
+      app.style.height = "100%";
       if (!streaming && !keepReading && keepFull)
         log.scrollTop = log.scrollHeight;
       return;
@@ -1242,7 +1260,9 @@ function setup(ctx, options = {}) {
     stopCast();
     document.removeEventListener("keydown", onKey);
     offActivate();
-    overlay?.destroy();
+    const openModal = modal;
+    modal = null;
+    openModal?.dismiss();
     view?.removeEventListener("resize", fitSoon);
     view?.removeEventListener("scroll", fit);
     window.removeEventListener("resize", fitSoon);

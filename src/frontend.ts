@@ -217,7 +217,6 @@ const STYLES = `
 .pg-full-btn:hover{color:var(--pg-ink);border-color:var(--pg-violet)}
 .pg-full-btn svg{width:16px;height:16px}
 /* Full screen: Paige over the whole window, with a comfortable reading width and a little bigger type. */
-.pg-overlay-root{position:fixed;inset:0;z-index:10000;background:#100e15;display:flex;justify-content:center}
 .pg-app.pg-full{width:100%;max-width:900px;font-size:16px;--pg-row:28px;--pg-m:56px;border-left:1px solid var(--pg-edge);border-right:1px solid var(--pg-edge)}
 .pg-app.pg-full .pg-top{padding-top:18px}
 .pg-app.pg-full .pg-title{font-size:40px}
@@ -241,20 +240,32 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3h10a1.5 1.5 0 0 1 1.5 1.5v15a1.5 1.5 0 0 1-1.5 1.5h-10z"/><path d="M4 6.5h4M4 10.5h4M4 14.5h4M4 18.5h4"/><path d="M10.5 8l1.2-1.6 1.3 1.2 1.3-1.2 1.2 1.6v1.6h-5z"/><path d="M10.5 13.5h5M10.5 16.5h3.5"/></svg>' });
   const removeStyle = ctx.dom.addStyle(STYLES);
   const app = el('div', undefined, 'pg-app'); tab.root.append(app);
-  let overlay: { root: HTMLElement; setVisible(v: boolean): void; destroy(): void } | null = null;
+  // Full screen uses Lumiverse's pop-up window, sized to fill the app (any extension may open one; the
+  // full-window layer needs an extra permission). The live panel moves into it and back, so nothing reloads.
+  let modal: { root: HTMLElement; dismiss(): void; onDismiss(handler: () => void): () => void } | null = null;
   let full = false;
-  const canFull = typeof (ctx.ui as { mountApp?: unknown }).mountApp === 'function';
+  const canFull = typeof (ctx.ui as { showModal?: unknown }).showModal === 'function';
   const fullPref = () => { try { return localStorage.getItem('paige.full') === '1'; } catch { return false; } };
   function setFull(on: boolean, remember = true) {
     if (closed || on === full || (on && !canFull)) return;
     // Moving the panel resets its scroll, so remember where you were reading in each tab.
     const places = [...app.querySelectorAll<HTMLElement>('.pg-log, .pg-scroll')].map(node => [node, node.scrollTop] as const);
     if (on) {
-      overlay ??= ctx.ui.mountApp({ position: 'app-overlay', className: 'pg-overlay' });
-      overlay.root.classList.add('pg-overlay-root');
-      overlay.root.append(app); overlay.setVisible(true);
+      try { modal = ctx.ui.showModal({ title: 'Paige', width: 4000, maxHeight: 4000, persistent: true }); }
+      catch { notify('Lumiverse wouldn’t open a full-screen window for Paige.', true); return; }
+      // Paige has her own header and close button, so the pop-up's frame steps aside and she fills it.
+      const body = modal.root.parentElement, box = body?.parentElement;
+      if (box && body) {
+        box.style.height = box.style.maxHeight; box.style.background = '#100e15';
+        (box.firstElementChild as HTMLElement | null)?.style.setProperty('display', 'none');
+        Object.assign(body.style, { padding: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: '0' });
+      }
+      Object.assign(modal.root.style, { flex: '1', minHeight: '0', display: 'flex', justifyContent: 'center' });
+      modal.root.append(app);
+      modal.onDismiss(() => { if (full) { modal = null; setFull(false); } });
     } else {
-      tab.root.append(app); overlay?.setVisible(false);
+      tab.root.append(app);
+      const open = modal; modal = null; open?.dismiss();
     }
     full = on; app.classList.toggle('pg-full', on); setFullLook(on);
     const backToPlace = () => { for (const [node, top] of places) node.scrollTop = top; };
@@ -345,7 +356,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (full) {
       // Full screen fills the window; while typing on a touch screen, only the part the keyboard leaves.
       const keepFull = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-      app.style.minHeight = '0'; app.style.height = `${Math.round(view?.height ?? window.innerHeight)}px`;
+      app.style.minHeight = '0'; app.style.height = '100%';
       if (!streaming && !keepReading && keepFull) log.scrollTop = log.scrollHeight;
       return;
     }
@@ -745,5 +756,5 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); overlay?.destroy(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); const openModal = modal; modal = null; openModal?.dismiss(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }

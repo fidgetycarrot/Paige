@@ -80,7 +80,18 @@ const root = document.getElementById('root')!;
 const ctx = {
   sendToBackend: (m: unknown) => { const copy = structuredClone(m); setTimeout(() => listener(copy, "u1", "s1"), 0); },
   onBackendMessage: (h: (m: unknown) => void) => { panelHandlers.push(h); return () => {}; },
-  ui: { registerDrawerTab: () => ({ root, destroy() {}, onActivate: () => () => {} }), mountApp: (o: { className?: string }) => { const r = document.createElement('div'); if (o.className) r.className = o.className; r.hidden = true; document.body.append(r); return { root: r, mountId: 'm1', setVisible: (v: boolean) => { r.hidden = !v; }, destroy: () => r.remove() }; } },
+  ui: { registerDrawerTab: () => ({ root, destroy() {}, onActivate: () => () => {} }), mountApp: () => { throw new Error('PERMISSION_DENIED:app_manipulation'); },
+    // Built the way Lumiverse's loader builds ctx.ui.showModal (frontend/src/lib/spindle/loader.ts).
+    showModal: (o: { title: string; width?: number; maxHeight?: number; persistent?: boolean }) => {
+      const root = document.createElement('div'), backdrop = document.createElement('div'), container = document.createElement('div'), header = document.createElement('div'), body = document.createElement('div');
+      Object.assign(backdrop.style, { position: 'fixed', inset: '0', zIndex: '10003', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+      Object.assign(container.style, { width: `${Math.min(o.width ?? 420, innerWidth - 40)}px`, maxHeight: `${Math.min(o.maxHeight ?? 520, innerHeight - 40)}px`, background: '#17131d', borderRadius: '12px', border: '1px solid #333', display: 'flex', flexDirection: 'column', overflow: 'hidden' });
+      Object.assign(header.style, { padding: '12px 16px', borderBottom: '1px solid #333' }); header.textContent = o.title;
+      Object.assign(body.style, { padding: '16px', overflowY: 'auto', flex: '1' }); body.append(root);
+      container.append(header, body); backdrop.append(container); document.body.append(backdrop);
+      const handlers = new Set<() => void>(); let gone = false;
+      return { root, modalId: 'm', dismiss() { if (gone) return; gone = true; backdrop.remove(); handlers.forEach(h => h()); }, setTitle() {}, onDismiss(h: () => void) { handlers.add(h); return () => handlers.delete(h); } };
+    } },
   dom: { addStyle: (css: string) => { const s = document.createElement('style'); s.textContent = css; document.head.append(s); return () => s.remove(); } },
 };
 setup(ctx as never);
