@@ -151,6 +151,7 @@ const STYLES = `
 .pg-check input{margin-top:4px}
 .pg-empty{color:var(--pg-muted);padding:30px 0;text-align:center}
 .pg-app [hidden]{display:none!important}
+.pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{margin-top:0}.pg-app.pg-typing .pg-log{padding-top:10px}
 @media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px 12px}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-ticket.pg-new{animation:pg-pin .5s ease-out}@keyframes pg-pin{from{background-color:var(--pg-violet-soft)}to{background-color:transparent}}}
 `;
@@ -212,6 +213,28 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   views.chat.append(log, compose);
   const grow = () => { box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`; };
   box.addEventListener('input', grow);
+  // On iOS the keyboard slides over the page without resizing it, so Paige's last message ended up under it.
+  // While typing, the panel is fitted to the part of the screen the keyboard leaves, with the newest message
+  // at the bottom of what's visible, just above the box.
+  const view = (globalThis as { visualViewport?: VisualViewport }).visualViewport;
+  let fitTimers: ReturnType<typeof setTimeout>[] = [];
+  const fit = () => {
+    if (closed || !view) return;
+    const typing = document.activeElement === box && window.innerHeight - view.height > 100;
+    if (!typing) { if (app.classList.contains('pg-typing')) { app.classList.remove('pg-typing'); app.style.height = ''; app.style.minHeight = ''; log.scrollTop = log.scrollHeight; } return; }
+    app.classList.add('pg-typing');
+    const visibleTop = view.offsetTop, visibleBottom = view.offsetTop + view.height;
+    const top = Math.max(app.getBoundingClientRect().top, visibleTop);
+    app.style.minHeight = '0';
+    app.style.height = `${Math.max(220, Math.round(visibleBottom - top))}px`;
+    log.scrollTop = log.scrollHeight;
+  };
+  // iOS moves the page a moment after the keyboard opens, so look again once it has settled.
+  const fitSoon = () => { fit(); fitTimers.forEach(clearTimeout); fitTimers = [120, 350, 700].map(ms => setTimeout(fit, ms)); };
+  view?.addEventListener('resize', fitSoon);
+  view?.addEventListener('scroll', fit);
+  box.addEventListener('focus', fitSoon);
+  box.addEventListener('blur', () => setTimeout(fitSoon, 50));
   box.addEventListener('keydown', e => {
     // Enter sends on a keyboard; on a phone the return key makes a new line and Send sends.
     const touch = matchMedia?.('(pointer: coarse)').matches;
@@ -454,5 +477,5 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }
