@@ -24,7 +24,7 @@ Give it these permissions: generation, characters, world_books, personas.
    - Your persona, if you made one with Paige, is created in Lumiverse.
    - Pressing it again later updates the same card instead of making a second one. Lorebook entries you added by hand stay.
 
-**Full screen** (top right, on a Mac or other big screen) opens Paige over the whole window; **Back to the side panel** or Esc puts her back. She remembers which you used last.
+**Full screen** (top right, on a Mac or other big screen) opens Paige over the whole window. Pick **Side by side** (chat on the left, notebook on the right) or **One wide chat**. **Back to the side panel** or Esc puts her back. She remembers both choices.
 
 **Save a backup** in Settings downloads the whole chat and notebook as a file. **Load a backup** brings one back, and also takes Paige's own `session.json` from her storage folder. Whatever was open is kept in Paige's storage.
 

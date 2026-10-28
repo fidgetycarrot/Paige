@@ -217,6 +217,17 @@ const STYLES = `
 .pg-full-btn:hover{color:var(--pg-ink);border-color:var(--pg-violet)}
 .pg-full-btn svg{width:16px;height:16px}
 /* Full screen: Paige over the whole window, with a comfortable reading width and a little bigger type. */
+.pg-panes{flex:1;min-height:0;display:flex;flex-direction:column}
+.pg-layout{display:flex;border:1px solid var(--pg-edge);border-radius:8px;overflow:hidden;font-size:13px;margin-left:auto;flex-shrink:0}
+.pg-layout button{background:none;border:0;color:var(--pg-pencil);padding:5px 10px;font:inherit;cursor:pointer;line-height:1.3}
+.pg-layout button[aria-pressed=true]{background:var(--pg-violet);color:var(--pg-violet-ink);font-weight:600}
+.pg-layout+.pg-full-btn{margin-left:8px}
+/* Side by side: chat (or settings) on the left, the notebook on the right. */
+.pg-app.pg-full.pg-split,.pg-app.pg-full.pg-wide{max-width:none;border:0}
+.pg-app.pg-split .pg-panes{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr)}
+.pg-app.pg-split .pg-panes>.pg-view{min-height:0}
+.pg-app.pg-split #pg-sheet-view{border-left:1px solid var(--pg-edge)}
+.pg-app.pg-split .pg-panes>.pg-view:not([hidden]){grid-row:1}
 .pg-app.pg-full{width:100%;max-width:900px;font-size:16px;--pg-row:28px;--pg-m:56px;border-left:1px solid var(--pg-edge);border-right:1px solid var(--pg-edge)}
 .pg-app.pg-full .pg-top{padding-top:18px}
 .pg-app.pg-full .pg-title{font-size:40px}
@@ -267,7 +278,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       tab.root.append(app);
       const open = modal; modal = null; open?.dismiss();
     }
-    full = on; app.classList.toggle('pg-full', on); setFullLook(on);
+    full = on; app.classList.toggle('pg-full', on); setFullLook(on); applyLayout();
     const backToPlace = () => { for (const [node, top] of places) node.scrollTop = top; };
     backToPlace(); requestAnimationFrame(backToPlace);
     keepReading = true;
@@ -294,21 +305,46 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   };
   setFullLook(false);
   fullButton.addEventListener('click', () => setFull(!full));
-  top.append(heading, sub, fullButton);
+  // In full screen: chat and notebook side by side, or one wide chat. Remembered.
+  let layout: 'split' | 'wide' = (() => { try { return localStorage.getItem('paige.layout') === 'wide' ? 'wide' : 'split'; } catch { return 'split'; } })();
+  let current: 'chat' | 'sheet' | 'settings' = 'chat';
+  const layoutSwitch = el('div', undefined, 'pg-layout'); layoutSwitch.setAttribute('role', 'group'); layoutSwitch.setAttribute('aria-label', 'Full screen layout');
+  const layoutButtons = (['split', 'wide'] as const).map(kind => {
+    const b = el('button', kind === 'split' ? 'Side by side' : 'One wide chat'); b.type = 'button';
+    b.title = kind === 'split' ? 'Chat on the left, notebook on the right' : 'The chat fills the whole window';
+    b.addEventListener('click', () => { layout = kind; try { localStorage.setItem('paige.layout', kind); } catch { /* not kept */ } applyLayout(); });
+    layoutSwitch.append(b); return b;
+  });
+  function applyLayout() {
+    const split = full && layout === 'split';
+    app.classList.toggle('pg-split', split); app.classList.toggle('pg-wide', full && layout === 'wide');
+    layoutButtons.forEach((b, i) => b.setAttribute('aria-pressed', String((['split', 'wide'] as const)[i] === layout)));
+    layoutSwitch.hidden = !full;
+    show(current);
+  }
+  layoutSwitch.hidden = true;
+  top.append(heading, sub, layoutSwitch, fullButton);
   const tabs = el('div', undefined, 'pg-tabs'); tabs.setAttribute('role', 'tablist');
   const views: Record<'chat' | 'sheet' | 'settings', HTMLElement> = { chat: el('section', undefined, 'pg-view'), sheet: el('section', undefined, 'pg-view'), settings: el('section', undefined, 'pg-view') };
+  views.sheet.id = 'pg-sheet-view';
   const tabButtons = {} as Record<keyof typeof views, HTMLButtonElement>;
-  const show = (name: keyof typeof views) => {
-    for (const [key, view] of Object.entries(views) as [keyof typeof views, HTMLElement][]) { view.hidden = key !== name; tabButtons[key].setAttribute('aria-selected', String(key === name)); }
+  function show(name: keyof typeof views) {
+    current = name;
+    // Side by side keeps the notebook open on the right, so the left side shows the chat or settings.
+    const split = app.classList.contains('pg-split');
+    const left = split && name === 'sheet' ? 'chat' : name;
+    for (const [key, view] of Object.entries(views) as [keyof typeof views, HTMLElement][]) { view.hidden = key !== left && !(split && key === 'sheet'); tabButtons[key].setAttribute('aria-selected', String(key === left)); }
+    tabButtons.sheet.hidden = split;
     try { localStorage.setItem('paige.tab', name); } catch { /* not kept */ }
-    if (name === 'chat' && !keepReading) log.scrollTop = log.scrollHeight;
+    if (left === 'chat' && !keepReading) log.scrollTop = log.scrollHeight;
     fitSoon();
-  };
+  }
   for (const [key, label] of [['chat', 'Chat'], ['sheet', 'Notebook'], ['settings', 'Settings']] as const) {
     const b = el('button', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.addEventListener('click', () => show(key));
     tabButtons[key] = b; tabs.append(b);
   }
-  app.append(top, tabs, views.chat, views.sheet, views.settings);
+  const panes = el('div', undefined, 'pg-panes'); panes.append(views.chat, views.settings, views.sheet);
+  app.append(top, tabs, panes);
 
   // ── Chat ──
   const log = el('div', undefined, 'pg-log pg-page'); log.setAttribute('aria-live', 'polite');
