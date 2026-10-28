@@ -201,7 +201,16 @@ const STYLES = `
 .pg-app hr{border:0;border-top:1px dashed var(--pg-edge);margin:22px 0}
 .pg-credit{margin-top:22px}
 .pg-app [hidden]{display:none!important}
+.pg-full-btn{margin-left:auto;display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--pg-edge);border-radius:8px;color:var(--pg-pencil);padding:5px 10px;font:inherit;font-size:13px;line-height:1.3;cursor:pointer;flex-shrink:0}
+.pg-full-btn:hover{color:var(--pg-ink);border-color:var(--pg-violet)}
+.pg-full-btn svg{width:16px;height:16px}
+/* Full screen: Paige over the whole window, with a comfortable reading width and a little bigger type. */
+.pg-overlay-root{position:fixed;inset:0;z-index:10000;background:#100e15;display:flex;justify-content:center}
+.pg-app.pg-full{width:100%;max-width:900px;font-size:16px;--pg-row:28px;--pg-m:56px;border-left:1px solid var(--pg-edge);border-right:1px solid var(--pg-edge)}
+.pg-app.pg-full .pg-top{padding-top:18px}
+.pg-app.pg-full .pg-title{font-size:40px}
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{padding-top:6px}
+@media (max-width:759px){.pg-full-btn{display:none}}
 @media (max-width:480px){.pg-app{--pg-m:26px}.pg-top{padding:12px 14px 2px}.pg-sub{display:none}.pg-log{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-scroll{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-compose{padding:8px 12px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:6px 10px 0}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
 `;
@@ -220,13 +229,49 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     iconSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3h10a1.5 1.5 0 0 1 1.5 1.5v15a1.5 1.5 0 0 1-1.5 1.5h-10z"/><path d="M4 6.5h4M4 10.5h4M4 14.5h4M4 18.5h4"/><path d="M10.5 8l1.2-1.6 1.3 1.2 1.3-1.2 1.2 1.6v1.6h-5z"/><path d="M10.5 13.5h5M10.5 16.5h3.5"/></svg>' });
   const removeStyle = ctx.dom.addStyle(STYLES);
   const app = el('div', undefined, 'pg-app'); tab.root.append(app);
+  let overlay: { root: HTMLElement; setVisible(v: boolean): void; destroy(): void } | null = null;
+  let full = false;
+  const canFull = typeof (ctx.ui as { mountApp?: unknown }).mountApp === 'function';
+  const fullPref = () => { try { return localStorage.getItem('paige.full') === '1'; } catch { return false; } };
+  function setFull(on: boolean, remember = true) {
+    if (closed || on === full || (on && !canFull)) return;
+    // Moving the panel resets its scroll, so remember where you were reading in each tab.
+    const places = [...app.querySelectorAll<HTMLElement>('.pg-log, .pg-scroll')].map(node => [node, node.scrollTop] as const);
+    if (on) {
+      overlay ??= ctx.ui.mountApp({ position: 'app-overlay', className: 'pg-overlay' });
+      overlay.root.classList.add('pg-overlay-root');
+      overlay.root.append(app); overlay.setVisible(true);
+    } else {
+      tab.root.append(app); overlay?.setVisible(false);
+    }
+    full = on; app.classList.toggle('pg-full', on); setFullLook(on);
+    const backToPlace = () => { for (const [node, top] of places) node.scrollTop = top; };
+    backToPlace(); requestAnimationFrame(backToPlace);
+    keepReading = true;
+    if (remember) { try { localStorage.setItem('paige.full', on ? '1' : '0'); } catch { /* not kept */ } }
+    fitSoon();
+  }
+  const onKey = (e: KeyboardEvent) => { if (full && e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setFull(false); } };
+  document.addEventListener('keydown', onKey);
+  // Opening Paige's tab goes straight to full screen if that's how you left her (on a big enough screen).
+  const offActivate = typeof tab.onActivate === 'function' ? tab.onActivate(() => { if (fullPref() && window.innerWidth >= 760) setFull(true, false); }) : () => {};
 
   // ── Header and tabs ──
   const top = el('div', undefined, 'pg-top');
   const title = el('h1', 'Paige', 'pg-title'); title.insertAdjacentHTML('afterbegin', '<svg class="pg-crown" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13 3.5 3l5 5 3-6 3 6 5-5L21 13z"/></svg>');
   const heading = el('div'); heading.append(title);
   const sub = el('p', 'Your notebook for characters, scenarios and lore. When it’s full, it becomes a card.', 'pg-sub');
-  top.append(heading, sub);
+  // Full screen: the same live panel moves into a layer over the whole app and back, so nothing reloads.
+  const fullButton = el('button', undefined, 'pg-full-btn'); fullButton.type = 'button';
+  const fullLabel = el('span');
+  const setFullLook = (on: boolean) => {
+    fullButton.innerHTML = on ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+    fullLabel.textContent = on ? 'Back to the side panel' : 'Full screen';
+    fullButton.append(fullLabel); fullButton.title = on ? 'Put Paige back in the side panel (Esc)' : 'Open Paige over the whole window';
+  };
+  setFullLook(false);
+  fullButton.addEventListener('click', () => setFull(!full));
+  top.append(heading, sub, fullButton);
   const tabs = el('div', undefined, 'pg-tabs'); tabs.setAttribute('role', 'tablist');
   const views: Record<'chat' | 'sheet' | 'settings', HTMLElement> = { chat: el('section', undefined, 'pg-view'), sheet: el('section', undefined, 'pg-view'), settings: el('section', undefined, 'pg-view') };
   const tabButtons = {} as Record<keyof typeof views, HTMLButtonElement>;
@@ -284,7 +329,15 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     return null;
   };
   const fit = () => {
-    if (closed || app.offsetParent === null) return;
+    if (closed) return;
+    if (full) {
+      // Full screen fills the window; while typing on a touch screen, only the part the keyboard leaves.
+      const keepFull = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+      app.style.minHeight = '0'; app.style.height = `${Math.round(view?.height ?? window.innerHeight)}px`;
+      if (!streaming && !keepReading && keepFull) log.scrollTop = log.scrollHeight;
+      return;
+    }
+    if (app.offsetParent === null) return;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const visibleTop = view?.offsetTop ?? 0, visibleBottom = visibleTop + (view?.height ?? window.innerHeight);
     const typing = document.activeElement === box && window.innerHeight - (view?.height ?? window.innerHeight) > 100;
@@ -305,7 +358,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (!streaming && !keepReading && (atBottom || typing)) log.scrollTop = log.scrollHeight;
   };
   // iOS moves the page a moment after the keyboard opens or closes, so look again once it has settled.
-  const fitSoon = () => { fit(); fitTimers.forEach(clearTimeout); fitTimers = [120, 350, 700].map(ms => setTimeout(fit, ms)); };
+  function fitSoon() { fit(); fitTimers.forEach(clearTimeout); fitTimers = [120, 350, 700].map(ms => setTimeout(fit, ms)); };
   view?.addEventListener('resize', fitSoon);
   view?.addEventListener('scroll', fit);
   window.addEventListener('resize', fitSoon);
@@ -616,5 +669,5 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; document.removeEventListener('keydown', onKey); offActivate(); overlay?.destroy(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }

@@ -72,7 +72,7 @@ const root = document.getElementById('root')!;
 const ctx = {
   sendToBackend: (m: unknown) => { const copy = structuredClone(m); setTimeout(() => listener(copy, "u1", "s1"), 0); },
   onBackendMessage: (h: (m: unknown) => void) => { panelHandlers.push(h); return () => {}; },
-  ui: { registerDrawerTab: () => ({ root, destroy() {} }) },
+  ui: { registerDrawerTab: () => ({ root, destroy() {}, onActivate: () => () => {} }), mountApp: (o: { className?: string }) => { const r = document.createElement('div'); if (o.className) r.className = o.className; r.hidden = true; document.body.append(r); return { root: r, mountId: 'm1', setVisible: (v: boolean) => { r.hidden = !v; }, destroy: () => r.remove() }; } },
   dom: { addStyle: (css: string) => { const s = document.createElement('style'); s.textContent = css; document.head.append(s); return () => s.remove(); } },
 };
 setup(ctx as never);
