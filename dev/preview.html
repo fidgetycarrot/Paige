@@ -1,4 +1,6 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>:root{--lumiverse-bg:#17131d;--lumiverse-text:#ece7f4;--lumiverse-text-muted:#aaa2b8}html,body{margin:0;height:100%;background:#17131d;font-family:-apple-system,system-ui,sans-serif}#root{height:100%}</style>
-</head><body><div id="root"></div><script type="module" src="build/preview.js"></script></body></html>
+<style>:root{--lumiverse-bg:#17131d;--lumiverse-text:#ece7f4;--lumiverse-text-muted:#aaa2b8}html,body{margin:0;height:100%;background:#17131d;font-family:-apple-system,system-ui,sans-serif}
+/* Like Lumiverse's drawer: a scrolling panel with a header and padding, whose height Paige doesn't control. */
+.drawer{height:100%;overflow-y:auto;display:flex;flex-direction:column}.drawer header{padding:12px 16px;color:#aaa2b8;border-bottom:1px solid #333}.drawer .body{padding-bottom:24px}</style>
+</head><body><div class="drawer"><header>Lumiverse drawer</header><div class="body"><div id="root"></div></div></div><script type="module" src="build/preview.js"></script></body></html>

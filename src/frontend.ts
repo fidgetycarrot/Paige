@@ -118,7 +118,7 @@ const STYLES = `
 .pg-ticket pre{padding:4px 14px 12px 16px;border-top:1px dashed var(--pg-line)}
 .pg-saved{font-size:12px;color:var(--pg-muted);margin-top:6px}
 .pg-working{color:var(--pg-muted);font-style:italic}
-.pg-compose{border-top:1px solid var(--pg-line);padding:10px 18px 16px;background:var(--pg-bg)}
+.pg-compose{border-top:1px solid var(--pg-line);padding:10px 18px max(16px,env(safe-area-inset-bottom));background:var(--pg-bg)}.pg-app.pg-typing .pg-compose{padding-bottom:10px}
 .pg-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
 .pg-chips button{border:1px solid var(--pg-line);background:none;color:var(--pg-ink);border-radius:999px;padding:3px 11px;font:inherit;font-size:13px;cursor:pointer}
 .pg-mode{margin-left:auto;display:flex;border:1px solid var(--pg-line);border-radius:999px;overflow:hidden;font-size:12px}
@@ -152,7 +152,7 @@ const STYLES = `
 .pg-empty{color:var(--pg-muted);padding:30px 0;text-align:center}
 .pg-app [hidden]{display:none!important}
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{margin-top:0}.pg-app.pg-typing .pg-log{padding-top:10px}
-@media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px 12px}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
+@media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-ticket.pg-new{animation:pg-pin .5s ease-out}@keyframes pg-pin{from{background-color:var(--pg-violet-soft)}to{background-color:transparent}}}
 `;
 
@@ -180,6 +180,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     for (const [key, view] of Object.entries(views) as [keyof typeof views, HTMLElement][]) { view.hidden = key !== name; tabButtons[key].setAttribute('aria-selected', String(key === name)); }
     try { localStorage.setItem('paige.tab', name); } catch { /* not kept */ }
     if (name === 'chat') log.scrollTop = log.scrollHeight;
+    fitSoon();
   };
   for (const [key, label] of [['chat', 'Chat'], ['sheet', 'Sheet'], ['settings', 'Settings']] as const) {
     const b = el('button', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.addEventListener('click', () => show(key));
@@ -213,28 +214,50 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   views.chat.append(log, compose);
   const grow = () => { box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`; };
   box.addEventListener('input', grow);
-  // On iOS the keyboard slides over the page without resizing it, so Paige's last message ended up under it.
-  // While typing, the panel is fitted to the part of the screen the keyboard leaves, with the newest message
-  // at the bottom of what's visible, just above the box.
+  // Paige always fills exactly the visible part of the screen, so only her chat scrolls, never the drawer around
+  // it (a redraw used to throw the drawer back to the top). On iOS the keyboard slides over the page without
+  // resizing it, so while typing the visible part is what the keyboard leaves, with the newest message just
+  // above the box.
   const view = (globalThis as { visualViewport?: VisualViewport }).visualViewport;
   let fitTimers: ReturnType<typeof setTimeout>[] = [];
+  const scroller = (): HTMLElement | null => {
+    for (let node = app.parentElement; node && node !== document.body; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowY;
+      if (overflow === 'auto' || overflow === 'scroll') return node;
+    }
+    return null;
+  };
   const fit = () => {
-    if (closed || !view) return;
-    const typing = document.activeElement === box && window.innerHeight - view.height > 100;
-    if (!typing) { if (app.classList.contains('pg-typing')) { app.classList.remove('pg-typing'); app.style.height = ''; app.style.minHeight = ''; log.scrollTop = log.scrollHeight; } return; }
-    app.classList.add('pg-typing');
-    const visibleTop = view.offsetTop, visibleBottom = view.offsetTop + view.height;
+    if (closed || app.offsetParent === null) return;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const visibleTop = view?.offsetTop ?? 0, visibleBottom = visibleTop + (view?.height ?? window.innerHeight);
+    const typing = document.activeElement === box && window.innerHeight - (view?.height ?? window.innerHeight) > 100;
+    app.classList.toggle('pg-typing', typing);
+    // If the drawer is scrolled so Paige's top is off screen, bring it back first.
+    const outer = scroller();
+    const above = visibleTop - app.getBoundingClientRect().top;
+    if (outer && above > 1) outer.scrollTop -= above;
     const top = Math.max(app.getBoundingClientRect().top, visibleTop);
     app.style.minHeight = '0';
-    app.style.height = `${Math.max(220, Math.round(visibleBottom - top))}px`;
-    log.scrollTop = log.scrollHeight;
+    app.style.height = `${Math.max(260, Math.round(visibleBottom - top))}px`;
+    // Anything the drawer adds below Paige (padding, a bar) comes off her height, so nothing is left to scroll.
+    const over = app.getBoundingClientRect().bottom - visibleBottom;
+    if (over > 1) app.style.height = `${Math.max(260, Math.round(visibleBottom - top - over))}px`;
+    // Padding the drawer puts under Paige would still let the drawer itself scroll a little; take that off too.
+    const spare = outer ? outer.scrollHeight - outer.clientHeight : 0;
+    if (spare > 1) app.style.height = `${Math.max(260, app.getBoundingClientRect().height - spare)}px`;
+    if (atBottom || typing) log.scrollTop = log.scrollHeight;
   };
-  // iOS moves the page a moment after the keyboard opens, so look again once it has settled.
+  // iOS moves the page a moment after the keyboard opens or closes, so look again once it has settled.
   const fitSoon = () => { fit(); fitTimers.forEach(clearTimeout); fitTimers = [120, 350, 700].map(ms => setTimeout(fit, ms)); };
   view?.addEventListener('resize', fitSoon);
   view?.addEventListener('scroll', fit);
+  window.addEventListener('resize', fitSoon);
   box.addEventListener('focus', fitSoon);
   box.addEventListener('blur', () => setTimeout(fitSoon, 50));
+  // Showing the drawer tab, or switching tabs inside Paige, changes where she sits.
+  const seen = typeof ResizeObserver === 'function' ? new ResizeObserver(() => fitSoon()) : null;
+  seen?.observe(tab.root);
   box.addEventListener('keydown', e => {
     // Enter sends on a keyboard; on a phone the return key makes a new line and Send sends.
     const touch = matchMedia?.('(pointer: coarse)').matches;
@@ -477,5 +500,5 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }

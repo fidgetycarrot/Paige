@@ -199,7 +199,7 @@ var STYLES = `
 .pg-ticket pre{padding:4px 14px 12px 16px;border-top:1px dashed var(--pg-line)}
 .pg-saved{font-size:12px;color:var(--pg-muted);margin-top:6px}
 .pg-working{color:var(--pg-muted);font-style:italic}
-.pg-compose{border-top:1px solid var(--pg-line);padding:10px 18px 16px;background:var(--pg-bg)}
+.pg-compose{border-top:1px solid var(--pg-line);padding:10px 18px max(16px,env(safe-area-inset-bottom));background:var(--pg-bg)}.pg-app.pg-typing .pg-compose{padding-bottom:10px}
 .pg-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
 .pg-chips button{border:1px solid var(--pg-line);background:none;color:var(--pg-ink);border-radius:999px;padding:3px 11px;font:inherit;font-size:13px;cursor:pointer}
 .pg-mode{margin-left:auto;display:flex;border:1px solid var(--pg-line);border-radius:999px;overflow:hidden;font-size:12px}
@@ -233,7 +233,7 @@ var STYLES = `
 .pg-empty{color:var(--pg-muted);padding:30px 0;text-align:center}
 .pg-app [hidden]{display:none!important}
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{margin-top:0}.pg-app.pg-typing .pg-log{padding-top:10px}
-@media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px 12px}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
+@media (max-width:480px){.pg-top,.pg-log,.pg-scroll{padding-left:14px;padding-right:14px}.pg-compose{padding:8px 14px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:0 8px}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-ticket.pg-new{animation:pg-pin .5s ease-out}@keyframes pg-pin{from{background-color:var(--pg-violet-soft)}to{background-color:transparent}}}
 `;
 var TYPE_ORDER = [...BLOCK_TYPES];
@@ -280,6 +280,7 @@ function setup(ctx, options = {}) {
     } catch {}
     if (name === "chat")
       log.scrollTop = log.scrollHeight;
+    fitSoon();
   };
   for (const [key, label] of [["chat", "Chat"], ["sheet", "Sheet"], ["settings", "Settings"]]) {
     const b = el("button", label);
@@ -343,25 +344,36 @@ function setup(ctx, options = {}) {
   box.addEventListener("input", grow);
   const view = globalThis.visualViewport;
   let fitTimers = [];
-  const fit = () => {
-    if (closed || !view)
-      return;
-    const typing = document.activeElement === box && window.innerHeight - view.height > 100;
-    if (!typing) {
-      if (app.classList.contains("pg-typing")) {
-        app.classList.remove("pg-typing");
-        app.style.height = "";
-        app.style.minHeight = "";
-        log.scrollTop = log.scrollHeight;
-      }
-      return;
+  const scroller = () => {
+    for (let node = app.parentElement;node && node !== document.body; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowY;
+      if (overflow === "auto" || overflow === "scroll")
+        return node;
     }
-    app.classList.add("pg-typing");
-    const visibleTop = view.offsetTop, visibleBottom = view.offsetTop + view.height;
+    return null;
+  };
+  const fit = () => {
+    if (closed || app.offsetParent === null)
+      return;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const visibleTop = view?.offsetTop ?? 0, visibleBottom = visibleTop + (view?.height ?? window.innerHeight);
+    const typing = document.activeElement === box && window.innerHeight - (view?.height ?? window.innerHeight) > 100;
+    app.classList.toggle("pg-typing", typing);
+    const outer = scroller();
+    const above = visibleTop - app.getBoundingClientRect().top;
+    if (outer && above > 1)
+      outer.scrollTop -= above;
     const top = Math.max(app.getBoundingClientRect().top, visibleTop);
     app.style.minHeight = "0";
-    app.style.height = `${Math.max(220, Math.round(visibleBottom - top))}px`;
-    log.scrollTop = log.scrollHeight;
+    app.style.height = `${Math.max(260, Math.round(visibleBottom - top))}px`;
+    const over = app.getBoundingClientRect().bottom - visibleBottom;
+    if (over > 1)
+      app.style.height = `${Math.max(260, Math.round(visibleBottom - top - over))}px`;
+    const spare = outer ? outer.scrollHeight - outer.clientHeight : 0;
+    if (spare > 1)
+      app.style.height = `${Math.max(260, app.getBoundingClientRect().height - spare)}px`;
+    if (atBottom || typing)
+      log.scrollTop = log.scrollHeight;
   };
   const fitSoon = () => {
     fit();
@@ -370,8 +382,11 @@ function setup(ctx, options = {}) {
   };
   view?.addEventListener("resize", fitSoon);
   view?.addEventListener("scroll", fit);
+  window.addEventListener("resize", fitSoon);
   box.addEventListener("focus", fitSoon);
   box.addEventListener("blur", () => setTimeout(fitSoon, 50));
+  const seen = typeof ResizeObserver === "function" ? new ResizeObserver(() => fitSoon()) : null;
+  seen?.observe(tab.root);
   box.addEventListener("keydown", (e) => {
     const touch = matchMedia?.("(pointer: coarse)").matches;
     if (e.key === "Enter" && !e.shiftKey && (!touch || e.metaKey || e.ctrlKey)) {
@@ -785,6 +800,8 @@ function setup(ctx, options = {}) {
     closed = true;
     view?.removeEventListener("resize", fitSoon);
     view?.removeEventListener("scroll", fit);
+    window.removeEventListener("resize", fitSoon);
+    seen?.disconnect();
     fitTimers.forEach(clearTimeout);
     if (castTimer)
       clearInterval(castTimer);
