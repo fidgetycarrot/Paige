@@ -149,11 +149,30 @@ The bell rings.
   });
 });
 
+describe('persona names', () => {
+  const persona = (body: string) => upsertBlocks([], parseBlocks('```\nPersona\n' + body + '\n```'), 1, id).sheet;
+  test('{{user}} as a name is not made, and says why', () => {
+    const plan = planCard(persona('Name: {{user}}\n## Appearance\n{{user}} is tall.'));
+    expect(plan.persona).toBeNull();
+    expect(plan.notes.join(' ')).toContain('doesn’t have a real name');
+    expect(looksFrom(persona('Name: {{user}}\n## Appearance\nTall.'))).toEqual([]);
+  });
+  test('Full name is used when Name is {{user}}, and {{user}} in the text becomes the name', () => {
+    const blocks = persona('Name: {{user}}\n## Identity\nFull name: Jason Slatz\n## Appearance\n{{user}} is huge.');
+    const plan = planCard(blocks);
+    expect(plan.persona?.name).toBe('Jason Slatz');
+    expect(plan.persona?.description).toContain('Jason Slatz is huge.');
+    expect(plan.persona?.description).not.toContain('{{user}}');
+    expect(looksFrom(blocks)[0].name).toBe('Jason Slatz');
+  });
+});
+
 describe('Paige prompt', () => {
   test('every edit to Dei\'s text lands', () => {
     const rules = paigeRules();
     expect(rules).toContain('look over each piece in the Notebook tab');
     expect(rules).toContain('### Phase 4.5: Persona (optional)');
+    expect(rules).toContain('Never write {{user}} in a Persona block.');
     expect(rules).toContain('labeled First message');
     expect(rules).not.toContain('scroll up and review');
     expect(rules).toContain('Paige finds her creator Deiomo hot');

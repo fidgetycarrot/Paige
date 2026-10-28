@@ -105,6 +105,13 @@ function pick(body, titles) {
 ${text}`] : [];
   });
 }
+var PLACEHOLDER = /^\s*\{\{\s*user\s*\}\}\s*$/i;
+function personaName(block) {
+  for (const value of [block.name, fieldOf(block.body, "Full name")])
+    if (value.trim() && !PLACEHOLDER.test(value) && value.trim().toLowerCase() !== "persona")
+      return value.trim();
+  return "";
+}
 function looksFrom(blocks) {
   const looks = [];
   for (const b of blocks) {
@@ -112,11 +119,14 @@ function looksFrom(blocks) {
     const parts = b.type === "Main character" ? pick(b.body, ["identity", "appearance & vibe", "body & intimate details"]) : b.type === "Side character" ? pick(b.body, ["identity", "look"]) : b.type === "Persona" ? pick(b.body, ["identity", "appearance", "body & intimate details"]) : [];
     if (!parts.some((p) => !p.startsWith("## Identity")))
       continue;
-    looks.push({ name: b.name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, description: `${b.name} \u2014 appearance:
+    const name = b.type === "Persona" ? personaName(b) : b.name;
+    if (!name)
+      continue;
+    looks.push({ name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, description: `${name} \u2014 appearance:
 
 ${parts.join(`
 
-`)}`.slice(0, 12000) });
+`).replace(/\{\{\s*user\s*\}\}/gi, name)}`.slice(0, 12000) });
   }
   return looks;
 }
@@ -151,6 +161,12 @@ ${lore.body}`, constant: false });
 
 `);
   const personaBlock = of("Persona")[0];
+  const realName = personaBlock ? personaName(personaBlock) : "";
+  if (personaBlock && !realName)
+    notes.push("Your persona doesn\u2019t have a real name yet (it says {{user}}), so it wasn\u2019t made. Open it in the notebook, give it a name, then press Update.");
+  const personaPlan = personaBlock && realName ? { name: realName, title: name, description: `${personaBlock.body.trim().replace(/\{\{\s*user\s*\}\}/gi, realName)}
+
+${PLAYER_RULE}` } : null;
   if (of("Persona").length > 1)
     notes.push("There is more than one persona; only the first one is made.");
   return {
@@ -166,9 +182,7 @@ ${lore.body}`, constant: false });
     },
     entries,
     notes,
-    persona: personaBlock ? { name: personaBlock.name, title: name, description: `${personaBlock.body.trim()}
-
-${PLAYER_RULE}` } : null
+    persona: personaPlan
   };
 }
 
@@ -363,7 +377,7 @@ function paigeRules() {
 
 ### Phase 4.5: Persona (optional)
 - Paige asks if {{user}} wants a persona for themselves in this story, or will use one of their own. If their own, skip to Phase 5.
-- Ask name and human or not, then two or three sections per message, with the usual hint + tailored example + question.
+- Ask the persona's real name (never use {{user}} as it) and human or not, then two or three sections per message, with the usual hint + tailored example + question.
 - When done, output the whole block once as one code block labeled Persona.
 
 ### Section notes: Persona ({{user}}'s own character)
@@ -375,6 +389,7 @@ function paigeRules() {
 - Personality tags: three to five.
 - Relationships: ties to characters already built. Use their names.
 - Notes: anything left over.
+- In the Persona block, write the persona's real name everywhere: in Name, Full name and all through the text. Never write {{user}} in a Persona block.
 - A persona describes. It never scripts: no example dialogue, no decisions or feelings {{user}} hasn't chosen. {{user}} plays them live.`);
   return text;
 }
@@ -400,7 +415,7 @@ Name: Mara Venn
 Full name: Mara Venn
 \`\`\`
 - When a piece is reopened with "back" or changed later, output the whole block again with the same label and Name. The app replaces the old one.
-- {{user}} means the person you're talking to. In blocks and first messages, write {{user}} literally wherever the player is meant.
+- {{user}} means the person you're talking to. In blocks and first messages, write {{user}} literally wherever the player is meant. The one exception is the Persona block: that's the player's own character, so it uses the persona's real name everywhere.
 - "Make my card" is a button on {{user}}'s panel. It puts each piece where it goes (see Job), makes the persona if there is one, and can send everyone's looks to LumiCast for Lumi Studio. Mention it at the hand-off.
 
 ${MODE_NOTES[mode]}`;

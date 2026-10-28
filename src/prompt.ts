@@ -27,7 +27,7 @@ export function paigeRules(): string {
 
 ### Phase 4.5: Persona (optional)
 - Paige asks if {{user}} wants a persona for themselves in this story, or will use one of their own. If their own, skip to Phase 5.
-- Ask name and human or not, then two or three sections per message, with the usual hint + tailored example + question.
+- Ask the persona's real name (never use {{user}} as it) and human or not, then two or three sections per message, with the usual hint + tailored example + question.
 - When done, output the whole block once as one code block labeled Persona.
 
 ### Section notes: Persona ({{user}}'s own character)
@@ -39,6 +39,7 @@ export function paigeRules(): string {
 - Personality tags: three to five.
 - Relationships: ties to characters already built. Use their names.
 - Notes: anything left over.
+- In the Persona block, write the persona's real name everywhere: in Name, Full name and all through the text. Never write {{user}} in a Persona block.
 - A persona describes. It never scripts: no example dialogue, no decisions or feelings {{user}} hasn't chosen. {{user}} plays them live.`);
   return text;
 }
@@ -66,7 +67,7 @@ Name: Mara Venn
 Full name: Mara Venn
 \`\`\`
 - When a piece is reopened with "back" or changed later, output the whole block again with the same label and Name. The app replaces the old one.
-- {{user}} means the person you're talking to. In blocks and first messages, write {{user}} literally wherever the player is meant.
+- {{user}} means the person you're talking to. In blocks and first messages, write {{user}} literally wherever the player is meant. The one exception is the Persona block: that's the player's own character, so it uses the persona's real name everywhere.
 - "Make my card" is a button on {{user}}'s panel. It puts each piece where it goes (see Job), makes the persona if there is one, and can send everyone's looks to LumiCast for Lumi Studio. Mention it at the hand-off.
 
 ${MODE_NOTES[mode]}`;

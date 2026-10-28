@@ -51,6 +51,13 @@ function pick(body, titles) {
 ${text}`] : [];
   });
 }
+var PLACEHOLDER = /^\s*\{\{\s*user\s*\}\}\s*$/i;
+function personaName(block) {
+  for (const value of [block.name, fieldOf(block.body, "Full name")])
+    if (value.trim() && !PLACEHOLDER.test(value) && value.trim().toLowerCase() !== "persona")
+      return value.trim();
+  return "";
+}
 function looksFrom(blocks) {
   const looks = [];
   for (const b of blocks) {
@@ -58,11 +65,14 @@ function looksFrom(blocks) {
     const parts = b.type === "Main character" ? pick(b.body, ["identity", "appearance & vibe", "body & intimate details"]) : b.type === "Side character" ? pick(b.body, ["identity", "look"]) : b.type === "Persona" ? pick(b.body, ["identity", "appearance", "body & intimate details"]) : [];
     if (!parts.some((p) => !p.startsWith("## Identity")))
       continue;
-    looks.push({ name: b.name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, description: `${b.name} — appearance:
+    const name = b.type === "Persona" ? personaName(b) : b.name;
+    if (!name)
+      continue;
+    looks.push({ name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, description: `${name} — appearance:
 
 ${parts.join(`
 
-`)}`.slice(0, 12000) });
+`).replace(/\{\{\s*user\s*\}\}/gi, name)}`.slice(0, 12000) });
   }
   return looks;
 }

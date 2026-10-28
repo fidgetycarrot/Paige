@@ -113,6 +113,13 @@ function pick(body: string, titles: string[]): string[] {
   });
 }
 
+const PLACEHOLDER = /^\s*\{\{\s*user\s*\}\}\s*$/i;
+/** A persona's real name: its Name, else its Full name, as long as it isn't {{user}} or empty. */
+export function personaName(block: Block): string {
+  for (const value of [block.name, fieldOf(block.body, 'Full name')]) if (value.trim() && !PLACEHOLDER.test(value) && value.trim().toLowerCase() !== 'persona') return value.trim();
+  return '';
+}
+
 export interface Look { name: string; aliases: string[]; kind: 'character' | 'persona'; description: string }
 
 /** What LumiCast needs to draw someone: who they are, what they look like. Clothes go in too; LumiCast keeps them apart. */
@@ -126,7 +133,10 @@ export function looksFrom(blocks: Block[]): Look[] {
       : [];
     // Without a look section there is nothing to draw.
     if (!parts.some(p => !p.startsWith('## Identity'))) continue;
-    looks.push({ name: b.name, aliases: listOf(fieldOf(b.body, 'Aliases')).slice(0, 8), kind, description: `${b.name} — appearance:\n\n${parts.join('\n\n')}`.slice(0, 12_000) });
+    // A persona with no real name yet can't be told apart in Lumi Studio, so it waits until it has one.
+    const name = b.type === 'Persona' ? personaName(b) : b.name;
+    if (!name) continue;
+    looks.push({ name, aliases: listOf(fieldOf(b.body, 'Aliases')).slice(0, 8), kind, description: `${name} — appearance:\n\n${parts.join('\n\n').replace(/\{\{\s*user\s*\}\}/gi, name)}`.slice(0, 12_000) });
   }
   return looks;
 }
@@ -163,6 +173,10 @@ export function planCard(blocks: Block[], options: { name?: string } = {}): Card
   if (!firsts.length) notes.push('No first message is kept, so the chat will start empty.');
   const description = mains[0]?.body.trim() ?? [`${name}`, scenarios[0] ? 'The story is set out in the scenario. Characters and lore are in the lorebook.' : 'Characters and lore are in the lorebook.'].join('\n\n');
   const personaBlock = of('Persona')[0];
+  // The persona is the player's own character: it needs a real name, and {{user}} in its text becomes that name.
+  const realName = personaBlock ? personaName(personaBlock) : '';
+  if (personaBlock && !realName) notes.push('Your persona doesn’t have a real name yet (it says {{user}}), so it wasn’t made. Open it in the notebook, give it a name, then press Update.');
+  const personaPlan = personaBlock && realName ? { name: realName, title: name, description: `${personaBlock.body.trim().replace(/\{\{\s*user\s*\}\}/gi, realName)}\n\n${PLAYER_RULE}` } : null;
   if (of('Persona').length > 1) notes.push('There is more than one persona; only the first one is made.');
   return {
     card: {
@@ -170,6 +184,6 @@ export function planCard(blocks: Block[], options: { name?: string } = {}): Card
       tags: ['Paige'], creator: 'Paige', creator_notes: 'Built with Paige. Paige by Deiomo (https://deiomo.github.io/).',
     },
     entries, notes,
-    persona: personaBlock ? { name: personaBlock.name, title: name, description: `${personaBlock.body.trim()}\n\n${PLAYER_RULE}` } : null,
+    persona: personaPlan,
   };
 }
