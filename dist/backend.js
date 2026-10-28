@@ -886,7 +886,7 @@ function setupBackend(api) {
         } catch (error) {
           const message = error instanceof Error ? error.message : "";
           if (/not registered|unknown endpoint|not found/i.test(message))
-            return { state: "failed", message: "LumiCast isn't installed, or it's too old to take characters from Paige. Install or update LumiCast, then press Send looks again." };
+            return { state: "failed", message: "LumiCast isn't installed, or it's too old to take characters from Paige. Install or update LumiCast, then press Choose who to send." };
           return { state: "failed", message: `LumiCast didn't take them: ${message.replace(/^.*?:\s*(?=[A-Z])/, "").slice(0, 240) || "no reason given"}` };
         }
       }

@@ -448,10 +448,10 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   looks.addEventListener('change', () => { try { localStorage.setItem('paige.looks', looks.checked ? '1' : '0'); } catch { /* not kept */ } });
   const looksRow = el('label', undefined, 'pg-check'); looksRow.append(looks, el('span', 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw'));
   const makeButton = el('button', 'Make my card', 'pg-btn pg-primary'); makeButton.type = 'button';
-  const resendButton = el('button', 'Send looks again', 'pg-btn'); resendButton.type = 'button';
+  const resendButton = el('button', 'Choose who to send', 'pg-btn'); resendButton.type = 'button';
   const makeStatus = el('div', undefined, 'pg-status'); makeStatus.setAttribute('role', 'status');
   const makeRow = el('div', undefined, 'pg-row'); makeRow.append(makeButton, resendButton);
-  // Send looks again: pick who. Anyone who didn't make it last time starts ticked.
+  // Choose who to send: pick who. Anyone who didn't make it last time starts ticked.
   const pick = el('div', undefined, 'pg-pick'); pick.hidden = true;
   // LumiCast's progress, one line per person.
   const cast = el('div', undefined, 'pg-cast'); cast.hidden = true; cast.setAttribute('role', 'status');
@@ -623,7 +623,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     }
   }
 
-  /** Who didn't make it in the last batch, so Send looks again can tick them for you. */
+  /** Who didn't make it in the last batch, so Choose who to send can tick them for you. */
   const failedLast = new Set<string>();
   let castClock: ReturnType<typeof setInterval> | null = null;
   const stopCast = () => { if (castTimer) clearInterval(castTimer); if (castClock) clearInterval(castClock); castTimer = castClock = null; if (!closed) update(); };
@@ -660,7 +660,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       if (running && lastWord > 150_000) cast.append(el('p', `LumiCast hasn’t said anything for ${minutes(lastWord)}. It may be stuck. Reloading Lumiverse stops it, and nothing already in Lumi Studio is lost.`, 'pg-cast-warn'));
       if (!running) {
         const failed = (s?.finished ?? []).filter(f => !f.ok), clashes = (s?.finished ?? []).filter(f => f.ok && /^saved as /.test(f.message));
-        if (failed.length) cast.append(el('p', `Press Send looks again to try ${failed.length === 1 ? failed[0].name : 'the ones that didn’t make it'} again. ${failed.length === 1 ? 'It’s' : 'They’re'} ticked for you.`, 'pg-cast-warn'));
+        if (failed.length) cast.append(el('p', `Press Choose who to send to try ${failed.length === 1 ? failed[0].name : 'the ones that didn’t make it'} again. ${failed.length === 1 ? 'It’s' : 'They’re'} ticked for you.`, 'pg-cast-warn'));
         if (clashes.length) cast.append(el('p', `${clashes.length === 1 ? 'One name was' : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`, 'pg-cast-warn'));
       }
       cast.hidden = false;

@@ -723,7 +723,7 @@ function setup(ctx, options = {}) {
   looksRow.append(looks, el("span", "Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw"));
   const makeButton = el("button", "Make my card", "pg-btn pg-primary");
   makeButton.type = "button";
-  const resendButton = el("button", "Send looks again", "pg-btn");
+  const resendButton = el("button", "Choose who to send", "pg-btn");
   resendButton.type = "button";
   const makeStatus = el("div", undefined, "pg-status");
   makeStatus.setAttribute("role", "status");
@@ -1088,7 +1088,7 @@ function setup(ctx, options = {}) {
       if (!running) {
         const failed = (s?.finished ?? []).filter((f) => !f.ok), clashes = (s?.finished ?? []).filter((f) => f.ok && /^saved as /.test(f.message));
         if (failed.length)
-          cast.append(el("p", `Press Send looks again to try ${failed.length === 1 ? failed[0].name : "the ones that didn’t make it"} again. ${failed.length === 1 ? "It’s" : "They’re"} ticked for you.`, "pg-cast-warn"));
+          cast.append(el("p", `Press Choose who to send to try ${failed.length === 1 ? failed[0].name : "the ones that didn’t make it"} again. ${failed.length === 1 ? "It’s" : "They’re"} ticked for you.`, "pg-cast-warn"));
         if (clashes.length)
           cast.append(el("p", `${clashes.length === 1 ? "One name was" : `${clashes.length} names were`} already taken in Lumi Studio, so nothing was replaced. Rename the ones marked “needs a new name” there.`, "pg-cast-warn"));
       }

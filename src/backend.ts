@@ -261,7 +261,7 @@ export function setupBackend(api: SpindleAPI) {
       throw new Error('Unknown Paige action.');
 
       /** Shares everyone's looks, then asks LumiCast to turn them into Lumi Studio characters. LumiCast does the rest in the background. */
-      /** only: send just these names (Send looks again lets you pick), so the ones already in Lumi Studio aren't copied. */
+      /** only: send just these names (Choose who to send lets you pick), so the ones already in Lumi Studio aren't copied. */
       async function sendLooks(current: Session, cardName: string, only?: string[]): Promise<CastStatus> {
         const wanted = only && new Set(only.map(n => n.trim().toLowerCase()));
         const looks = looksFrom(current.blocks).filter(l => !wanted || wanted.has(l.name.trim().toLowerCase()));
@@ -276,7 +276,7 @@ export function setupBackend(api: SpindleAPI) {
           return { state: 'started', message: `LumiCast is working on ${looks.length} ${looks.length === 1 ? 'look' : 'looks'}: ${looks.map(l => l.name).join(', ')}. They land in Lumi Studio as they finish.` };
         } catch (error) {
           const message = error instanceof Error ? error.message : '';
-          if (/not registered|unknown endpoint|not found/i.test(message)) return { state: 'failed', message: 'LumiCast isn\'t installed, or it\'s too old to take characters from Paige. Install or update LumiCast, then press Send looks again.' };
+          if (/not registered|unknown endpoint|not found/i.test(message)) return { state: 'failed', message: 'LumiCast isn\'t installed, or it\'s too old to take characters from Paige. Install or update LumiCast, then press Choose who to send.' };
           return { state: 'failed', message: `LumiCast didn't take them: ${message.replace(/^.*?:\s*(?=[A-Z])/, '').slice(0, 240) || 'no reason given'}` };
         }
       }
