@@ -1,8 +1,9 @@
 import type { SpindleAPI, GenerationRequestDTO } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, looksFrom, parseBlocks, planCard, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
-import { buildMessages, greeting } from './prompt';
+import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
+import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
-import { record, text, THINKING, type CardResult, type CastStatus, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
+import { record, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 
 const DEFAULTS: Settings = { connectionId: '', thinking: 'light' };
 // A light think keeps Paige quick; off and inherit are the user's choice.
@@ -25,11 +26,19 @@ function readSession(value: unknown): Session | null {
   const blocks: Block[] = v.blocks.map(b => record(b)).filter(b => typeof b.id === 'string' && (BLOCK_TYPES as readonly string[]).includes(String(b.type))).map(b => ({
     id: String(b.id), type: b.type as BlockType, name: String(b.name ?? ''), body: String(b.body ?? ''), updatedAt: Number(b.updatedAt) || 0,
     ...(b.type === 'First message' ? { keep: b.keep !== false } : {}), ...(b.edited ? { edited: true } : {}),
+    ...(typeof b.origin === 'string' ? { origin: b.origin } : {}),
+    ...(Object.keys(record(b.source)).length ? { source: (({ field, entryId, bookId, foreign }) => ({
+      ...(typeof field === 'string' ? { field: field as never } : {}), ...(typeof entryId === 'string' ? { entryId } : {}), ...(typeof bookId === 'string' ? { bookId } : {}), ...(foreign === true ? { foreign: true } : {}),
+    }))(record(b.source)) } : {}),
   }));
+  const src = record(v.source), rp = record(v.roleplay);
+  const strings = (x: unknown) => Array.isArray(x) ? x.filter((y): y is string => typeof y === 'string') : [];
   const card = record(v.card);
   return {
     version: 1, id: v.id, mode: v.mode === 'quick' ? 'quick' : 'full', startedAt: Number(v.startedAt) || Date.now(), turns: turns.length ? turns : freshSession('full').turns, blocks,
     ...(Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: 'x', turns: [], blocks: v.undo })!.blocks } : {}),
+    ...(typeof src.characterId === 'string' ? { source: { characterId: src.characterId, name: String(src.name ?? ''), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...(typeof src.paigeBookId === 'string' ? { paigeBookId: src.paigeBookId } : {}) } } : {}),
+    ...(typeof rp.chatId === 'string' ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? '') } } : {}),
     ...(typeof card.characterId === 'string' ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ''), personaId: typeof card.personaId === 'string' ? card.personaId : undefined, name: String(card.name ?? ''), savedAt: Number(card.savedAt) || 0 } } : {}),
   };
 }
@@ -73,7 +82,7 @@ export function setupBackend(api: SpindleAPI) {
         return {
           settings, session: session(), busy: !!state.job,
           connections: connections.map(c => ({ id: c.id, name: c.name, provider: c.provider, model: c.model })),
-          permissions: { generation: api.permissions.has('generation'), characters: api.permissions.has('characters'), world_books: api.permissions.has('world_books'), personas: api.permissions.has('personas') },
+          permissions: { generation: api.permissions.has('generation'), characters: api.permissions.has('characters'), world_books: api.permissions.has('world_books'), personas: api.permissions.has('personas'), chats: api.permissions.has('chats'), chat_mutation: api.permissions.has('chat_mutation') },
         } satisfies Snapshot;
       }
       if (r.action === 'stop') { state.job?.abort(); return true; }
@@ -141,6 +150,59 @@ export function setupBackend(api: SpindleAPI) {
         return session();
       }
 
+      if (r.action === 'listCards') {
+        if (!api.permissions.has('characters')) throw new Error('Grant Paige the characters permission in Extensions.');
+        const cards: CardListItem[] = [];
+        for (let offset = 0; offset < 5000; offset += 200) {
+          const page = await api.characters.list({ offset, limit: 200, userId });
+          for (const c of page.data) cards.push({ id: c.id, name: c.name, updatedAt: c.updated_at, paige: !!record(c.extensions).paige });
+          if (page.data.length < 200) break;
+        }
+        return cards.sort((a, b) => b.updatedAt - a.updatedAt);
+      }
+      if (r.action === 'bringCard') {
+        for (const permission of ['characters', 'world_books']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions to bring a card in.`);
+        const characterId = text(input.characterId, 'card', 100);
+        const card = await api.characters.get(characterId, userId);
+        if (!card) throw new Error('That card isn’t in Lumiverse anymore.');
+        const { blocks, source } = await readCard(card as unknown as CardIn);
+        // What was open is kept, the same way Start over keeps it.
+        if (session().turns.length > 1 || session().blocks.length) {
+          try { await api.userStorage.setJson(`old/${session().id}.json`, session(), { userId }); } catch { /* best effort */ }
+        }
+        const fresh = freshSession(session().mode);
+        fresh.turns = [{ role: 'assistant', content: fixGreeting(card.name, blocks.length), at: Date.now() }];
+        fresh.blocks = blocks; fresh.source = source;
+        state.session = fresh;
+        await persist(); broadcast();
+        return { session: fresh, skipped: source.skipped };
+      }
+      if (r.action === 'listChats') {
+        const current = session();
+        if (!current.source) throw new Error('Bring a card to Paige first.');
+        if (!api.permissions.has('chats')) throw new Error('Grant Paige the chats permission in Extensions so she can see this card’s chats.');
+        const page = await api.chats.list({ characterId: current.source.characterId, limit: 50, userId });
+        return page.data.sort((a, b) => b.updated_at - a.updated_at).map(c => ({ id: c.id, name: c.name || 'Untitled chat', updatedAt: c.updated_at })) satisfies ChatListItem[];
+      }
+      if (r.action === 'setRoleplay') {
+        const current = session();
+        if (!current.source) throw new Error('Bring a card to Paige first.');
+        const on = input.on === true;
+        const chatId = text(input.chatId ?? '', 'chat', 100);
+        if (on) {
+          if (!chatId) throw new Error('Pick which chat Paige should read.');
+          const chat = await api.chats.get(chatId, userId);
+          if (!chat || chat.character_id !== current.source.characterId) throw new Error('That chat isn’t one of this card’s chats.');
+          current.roleplay = { on: true, chatId, chatName: chat.name || 'Untitled chat' };
+          const preview = await readRoleplay(current);
+          await persist(); broadcast();
+          return { session: current, words: preview.words, count: preview.count };
+        }
+        if (current.roleplay) current.roleplay.on = false;
+        await persist(); broadcast();
+        return { session: current, words: 0, count: 0 };
+      }
+
       if (r.action === 'send' || r.action === 'retry') {
         if (!api.permissions.has('generation')) throw new Error('Grant Paige the generation permission in Extensions.');
         if (!settings.connectionId) throw new Error('Pick a model connection for Paige under Settings first.');
@@ -169,7 +231,7 @@ export function setupBackend(api: SpindleAPI) {
         try {
           const request: GenerationRequestDTO & { provider: string; model: string } = {
             type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
-            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns }),
+            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
             parameters: { max_tokens: 8000 }, ...(REASONING[settings.thinking] ? { reasoning: { ...REASONING[settings.thinking] } } : {}), signal: controller.signal,
           };
           let reasoning = '', finish = '';
@@ -212,6 +274,7 @@ export function setupBackend(api: SpindleAPI) {
       if (r.action === 'makeCard') {
         for (const permission of ['characters', 'world_books']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions to make the card.`);
         const current = session();
+        if (current.source) return await saveFixes(current, input.asCopy === true, typeof input.name === 'string' ? input.name : '', input.sendLooks === true);
         if (!current.blocks.some(b => b.type !== 'First message')) throw new Error('The notebook is empty. Build something with Paige first.');
         const plan = planCard(current.blocks, { name: typeof input.name === 'string' ? input.name : '' });
         if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
@@ -280,11 +343,108 @@ export function setupBackend(api: SpindleAPI) {
           return { state: 'failed', message: `LumiCast didn't take them: ${message.replace(/^.*?:\s*(?=[A-Z])/, '').slice(0, 240) || 'no reason given'}` };
         }
       }
+      /** A card and its lorebooks as notebook pieces. */
+      async function readCard(card: CardIn): Promise<{ blocks: Block[]; source: CardSource }> {
+        const entries: EntryIn[] = [];
+        for (const bookId of card.world_book_ids ?? []) {
+          for (let offset = 0; offset < 5000; offset += 200) {
+            const page = await api.world_books.entries.list(bookId, { offset, limit: 200, userId }).catch(() => null);
+            if (!page) break;
+            for (const e of page.data) entries.push({ id: e.id, world_book_id: e.world_book_id, key: e.key ?? [], content: e.content ?? '', comment: e.comment ?? '', constant: !!e.constant, disabled: !!e.disabled, extensions: record(e.extensions) });
+            if (page.data.length < 200) break;
+          }
+        }
+        return cardToBlocks(card, entries);
+      }
+
+      /** The end of the chosen chat, read fresh each time so Paige sees the latest. */
+      async function readRoleplay(current: Session): Promise<{ text: string; count: number; words: number }> {
+        const rp = current.roleplay;
+        if (!rp?.on) return { text: '', count: 0, words: 0 };
+        for (const permission of ['chats', 'chat_mutation']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions so she can read the roleplay, or switch Read the roleplay off. She only reads with it.`);
+        let messages: { name: string; is_user: boolean; content: string; role?: string }[];
+        try { messages = await api.chat.getMessages(rp.chatId); }
+        catch { throw new Error('Paige couldn’t read that chat. Pick another one, or switch Read the roleplay off.'); }
+        const result = roleplayText(rp.chatName, messages.filter(m => m.role !== 'system').map(m => ({ name: m.name, isUser: m.is_user, content: m.content ?? '' })));
+        return { ...result, words: result.text.split(/\s+/).length };
+      }
+
+      /** Saves the notebook's changes back to the card it came from, or to a new copy of it. */
+      async function saveFixes(current: Session, asCopy: boolean, copyName: string, looks: boolean): Promise<CardResult> {
+        const source = current.source!;
+        const plan = planFix(current.blocks, source);
+        if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
+        const original = await api.characters.get(source.characterId, userId);
+        if (!original) throw new Error('That card isn’t in Lumiverse anymore. Tick “Save as a copy” to save the fixes as a new card.');
+        const mark = { sessionId: current.id };
+        const notes = [...plan.notes];
+        const newEntry = (e: { comment: string; key: string[]; content: string; constant: boolean }, i: number) =>
+          ({ key: e.key, comment: e.comment, content: e.content, constant: e.constant, selective: false, disabled: false, case_sensitive: false, match_whole_words: true, order_value: 100 + i, extensions: { paige: mark } });
+        let target = original;
+        if (!asCopy) {
+          for (const u of plan.updates) {
+            const before = await api.world_books.entries.get(u.entryId, userId).catch(() => null);
+            if (!before) { notes.push(`The lorebook entry “${u.plan.comment}” was gone, so it was added again.`); plan.create.push(u.plan); continue; }
+            await api.world_books.entries.update(u.entryId, { content: u.plan.content, key: u.plan.key, comment: u.plan.comment, ...(before.constant !== u.plan.constant ? { constant: u.plan.constant } : {}) }, userId);
+          }
+          for (const entryId of plan.disable) await api.world_books.entries.update(entryId, { disabled: true }, userId).catch(() => {});
+          let bookIds = [...original.world_book_ids];
+          if (plan.create.length) {
+            let bookId = source.paigeBookId && bookIds.includes(source.paigeBookId) ? source.paigeBookId : '';
+            if (!bookId) { bookId = (await api.world_books.create({ name: `${original.name} · Paige`.slice(0, 100), description: 'Pieces added with Paige.', metadata: { paige: mark } }, userId)).id; bookIds = [...bookIds, bookId]; }
+            for (const [i, e] of plan.create.entries()) await api.world_books.entries.create(bookId, newEntry(e, i), userId);
+          }
+          target = await api.characters.update(original.id, { ...plan.patch, ...(bookIds.length !== original.world_book_ids.length ? { world_book_ids: bookIds } : {}) }, userId);
+        } else {
+          // The copy gets its own lorebook with every entry the card had (fixed ones fixed, switched-off ones left out), so the original stays exactly as it was.
+          const name = copyName.trim() || `${original.name} (fixed)`;
+          const book = await api.world_books.create({ name: `${name} · Paige`.slice(0, 100), description: `A copy of ${original.name}'s lorebook, with Paige's fixes.`, metadata: { paige: mark } }, userId);
+          const fixes = new Map(plan.updates.map(u => [u.entryId, u.plan])), gone = new Set(plan.disable);
+          let order = 0;
+          for (const bookId of original.world_book_ids) {
+            for (let offset = 0; offset < 5000; offset += 200) {
+              const page = await api.world_books.entries.list(bookId, { offset, limit: 200, userId }).catch(() => null);
+              if (!page) break;
+              for (const e of page.data) {
+                if (gone.has(e.id)) continue;
+                const { id: _id, world_book_id: _book, uid: _uid, created_at: _c, updated_at: _u, vectorized: _v, ...rest } = e;
+                const fix = fixes.get(e.id);
+                await api.world_books.entries.create(book.id, { ...rest, ...(fix ? { content: fix.content, key: fix.key, comment: fix.comment, constant: fix.constant } : {}), order_value: rest.order_value ?? order++ } as never, userId);
+              }
+              if (page.data.length < 200) break;
+            }
+          }
+          for (const [i, e] of plan.create.entries()) await api.world_books.entries.create(book.id, newEntry(e, 1000 + i), userId);
+          const { id: _id, image_id: _img, created_at: _c, updated_at: _u, world_book_ids: _b, extensions, ...fields } = original;
+          target = await api.characters.create({ ...fields, ...plan.patch, name, world_book_ids: [book.id], extensions: { ...(extensions ?? {}), paige: mark } }, userId);
+          if (original.image_id) notes.push('The copy has no picture yet. Add one in Lumiverse if you like.');
+        }
+        let personaId = current.card?.personaId, personaName = '';
+        if (plan.persona) {
+          const existing = personaId ? await api.personas.get(personaId, userId).catch(() => null) : null;
+          const persona = existing ? await api.personas.update(existing.id, plan.persona, userId) : await api.personas.create({ ...plan.persona, metadata: { paige: mark } }, userId);
+          personaId = persona.id; personaName = persona.name;
+        }
+        // The notebook now matches the saved card, so the next changes are measured from here.
+        const fresh = await api.characters.get(target.id, userId);
+        if (fresh) {
+          const keep = current.blocks.filter(b => b.type === 'Persona' || (b.type === 'First message' && b.keep === false));
+          const again = await readCard(fresh as unknown as CardIn);
+          current.blocks = [...again.blocks, ...keep];
+          current.source = again.source;
+        }
+        if (asCopy && current.roleplay) current.roleplay.on = false;
+        current.card = { characterId: target.id, worldBookId: current.source?.paigeBookId ?? '', personaId, name: target.name, savedAt: Date.now() };
+        await persist(); broadcast();
+        let cast: CastStatus | null = null;
+        if (looks) cast = await sendLooks(current, target.name);
+        return { copy: asCopy, changes: plan.summary, updated: !asCopy, name: target.name, entries: plan.updates.length + plan.create.length, greetings: plan.patch.first_mes !== undefined ? (plan.patch.first_mes ? 1 : 0) + (plan.patch.alternate_greetings?.length ?? 0) : 0, personaName, personaNote: '', notes, cast, session: current };
+      }
     })().then(result => reply(result)).catch(error => {
       if (error instanceof Error && error.name === 'AbortError') return reply(undefined, 'Stopped.');
       // Provider errors can carry URLs or keys; only Paige's own messages go to the panel.
       const message = error instanceof Error ? error.message : '';
-      const trusted = error instanceof ModelRequestError || /^(Grant Paige|Pick a|Paige|That |There |The |This |Type |A piece|Invalid |Unknown Paige)/.test(message);
+      const trusted = error instanceof ModelRequestError || /^(Grant Paige|Pick |Paige|That |There |The |This |Type |A piece|Invalid |Unknown Paige|Bring a card)/.test(message);
       reply(undefined, trusted ? message : 'Something went wrong. Your session is saved; try again.');
     });
   });

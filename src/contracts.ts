@@ -1,4 +1,5 @@
 import type { Block, Mode } from './blocks';
+import type { CardSource } from './fix';
 
 export type Thinking = 'light' | 'off' | 'inherit';
 export const THINKING: Thinking[] = ['light', 'off', 'inherit'];
@@ -11,14 +12,20 @@ export interface Session {
   /** The Sheet as it was before Paige's last reply, so Retry can take that reply back cleanly. */
   undo?: Block[];
   card?: SavedCard;
+  /** Set when the notebook is a card brought back to Paige for fixes. */
+  source?: CardSource;
+  /** Let Paige read the end of one of that card's chats with every message. Off unless switched on. */
+  roleplay?: { on: boolean; chatId: string; chatName: string };
 }
+export interface CardListItem { id: string; name: string; updatedAt: number; paige: boolean }
+export interface ChatListItem { id: string; name: string; updatedAt: number }
 export interface Snapshot {
   settings: Settings; session: Session; busy: boolean;
   connections: { id: string; name: string; provider: string; model: string }[];
-  permissions: Record<'generation' | 'characters' | 'world_books' | 'personas', boolean>;
+  permissions: Record<'generation' | 'characters' | 'world_books' | 'personas' | 'chats' | 'chat_mutation', boolean>;
 }
 export interface CastStatus { state: 'started' | 'skipped' | 'failed'; message: string }
-export interface CardResult { updated: boolean; name: string; entries: number; greetings: number; personaName: string; personaNote: string; notes: string[]; cast: CastStatus | null; session: Session }
+export interface CardResult { copy?: boolean; changes?: string[]; updated: boolean; name: string; entries: number; greetings: number; personaName: string; personaNote: string; notes: string[]; cast: CastStatus | null; session: Session }
 /** What LumiCast publishes at lumicast.paige.status while it works through Paige's looks. */
 export interface LumiCastStatus { sessionId: string; done: number; total: number; running: boolean; current?: string; stage?: string; names?: string[]; startedAt?: number; updatedAt?: number; error?: string; finished: { name: string; ok: boolean; message: string }[] }
 

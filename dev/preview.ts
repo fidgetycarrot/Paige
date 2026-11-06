@@ -61,8 +61,23 @@ const api = {
       yield { type: 'done', content: text, finish_reason: 'stop' };
     },
   },
-  characters: { get: async () => null, create: async (i: object) => ({ ...i, id: `c${++n}` }), update: async () => ({}) },
-  world_books: { get: async () => null, create: async (i: object) => ({ ...i, id: `b${++n}` }), entries: { list: async () => ({ data: [], total: 0 }), create: async () => ({}) } },
+  characters: {
+    list: async () => ({ data: [
+      { id: 'v', name: 'Vesper Vance', updated_at: Date.now() / 1000 - 3600, extensions: { paige: {} } },
+      { id: 'm', name: 'Maren', updated_at: Date.now() / 1000 - 86400 * 3, extensions: {} },
+      { id: 'g', name: 'Guild RPG', updated_at: Date.now() / 1000 - 86400 * 9, extensions: {} },
+    ], total: 3 }),
+    get: async (id: string) => id === 'v' ? { id: 'v', name: 'Vesper Vance', description: 'Name: Vesper Vance\n## Identity\nFull name: Vesper Vance\nAge: 31\nOccupation: smuggler captain\n## Psychology & behavioral triggers\n- When someone apologizes, she forgives them on the spot.', scenario: '## Setting\nLocation: Port Hesk\nGenre: low fantasy', personality: '', mes_example: '', system_prompt: '', post_history_instructions: '', first_mes: '*Fog rolls in over Pier Nine.*', alternate_greetings: [], world_book_ids: ['bk'], extensions: { paige: {} }, updated_at: 1 } : null,
+    create: async (i: object) => ({ ...i, id: `c${++n}` }), update: async (id: string, i: object) => ({ id, name: 'Vesper Vance', ...i }),
+  },
+  world_books: { get: async () => null, create: async (i: object) => ({ ...i, id: `b${++n}` }), entries: {
+    list: async (book: string) => ({ data: book === 'bk' ? [
+      { id: 'e1', world_book_id: 'bk', key: ['Inquisitor', 'Valeria'], comment: 'Side character · Inquisitor Valeria Helveta', content: '[Side character]\nName: Inquisitor Valeria Helveta\n## Look\nSilver armor, a burn scar.', constant: false, disabled: false, extensions: { paige: {} } },
+      { id: 'e2', world_book_id: 'bk', key: ['Rusty Gear'], comment: 'Rusty Gear', content: 'A tavern on the docks.', constant: false, disabled: false, extensions: {} },
+    ] : [], total: 2 }),
+    create: async () => ({}), get: async () => ({ constant: false }), update: async () => ({}) } },
+  chats: { list: async () => ({ data: [{ id: 'ch1', character_id: 'v', name: 'The Pier Nine job', updated_at: Date.now() / 1000 - 600 }, { id: 'ch2', character_id: 'v', name: 'First try', updated_at: Date.now() / 1000 - 86400 * 2 }], total: 2 }), get: async (id: string) => ({ id, character_id: 'v', name: id === 'ch1' ? 'The Pier Nine job' : 'First try' }) },
+  chat: { getMessages: async () => Array.from({ length: 30 }, (_, i) => ({ name: i % 2 ? 'Vesper Vance' : 'Jason', is_user: i % 2 === 0, role: i % 2 ? 'assistant' : 'user', content: i % 2 ? 'She sighs and waves it off. "Forget it. We\'re good."' : 'I\'m sorry I sold you out to the Guild.' })) },
   personas: { get: async () => null, create: async (i: object) => ({ ...i, id: `p${++n}` }) },
   rpcPool: { sync: () => 'paige.cast', read: async (e: string) => {
     if (e === 'lumicast.paige.start') { castStart = Date.now(); return { ok: true }; }

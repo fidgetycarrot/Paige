@@ -1,16 +1,18 @@
 {
   "name": "Paige",
   "identifier": "paige",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "author": "fidgetycarrot",
   "github": "https://github.com/fidgetycarrot/Paige",
   "homepage": "https://github.com/fidgetycarrot/Paige#readme",
-  "description": "Build characters, a scenario and lore with Paige, one piece at a time. Then make the card, the lorebook and your persona with one button.",
+  "description": "Build characters, a scenario and lore with Paige, one piece at a time, then make the card with one button. Bring a card back later and she'll fix it with you.",
   "permissions": [
     "generation",
     "characters",
     "world_books",
-    "personas"
+    "personas",
+    "chats",
+    "chat_mutation"
   ],
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",

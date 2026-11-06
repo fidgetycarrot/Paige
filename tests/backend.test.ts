@@ -2,16 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import { setupBackend } from '../src/backend';
 
 /** Just enough of the host for Paige's backend: storage, one connection, streaming replies, cards, lorebooks, personas, the shared pool. */
-function fakeHost(replies: string[], lumicast = true) {
+function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
   const store = new Map<string, unknown>();
   const sent: Record<string, unknown>[] = [];
   let listener: (payload: unknown, userId?: string, session?: string) => void = () => {};
   const characters = new Map<string, Record<string, unknown>>(), books = new Map<string, Record<string, unknown>>(), entries = new Map<string, Record<string, unknown>>(), personas = new Map<string, Record<string, unknown>>();
   const pool = new Map<string, unknown>();
   let seq = 0; const nid = (p: string) => `${p}${++seq}`;
+  const chats: { id: string; character_id: string; name: string; updated_at: number }[] = [];
   const requests: unknown[] = [];
   const api = {
-    permissions: { has: () => true },
+    permissions: { has: (p: string) => !denied.includes(p) },
     onFrontendMessage: (fn: typeof listener) => { listener = fn; return () => {}; },
     sendToFrontend: (m: Record<string, unknown>) => { sent.push(m); },
     userStorage: {
@@ -29,8 +30,9 @@ function fakeHost(replies: string[], lumicast = true) {
       },
     },
     characters: {
+      list: async () => { const data = [...characters.values()]; return { data, total: data.length }; },
       get: async (id: string) => characters.get(id) ?? null,
-      create: async (input: Record<string, unknown>) => { const c = { ...input, id: nid('char') }; characters.set(c.id, c); return c; },
+      create: async (input: Record<string, unknown>) => { const c = { world_book_ids: [], alternate_greetings: [], ...input, id: nid('char'), updated_at: ++seq }; characters.set(c.id, c); return c; },
       update: async (id: string, input: Record<string, unknown>) => { const c = { ...characters.get(id), ...input }; characters.set(id, c); return c; },
     },
     world_books: {
@@ -39,7 +41,9 @@ function fakeHost(replies: string[], lumicast = true) {
       update: async (id: string, input: Record<string, unknown>) => { const b = { ...books.get(id), ...input }; books.set(id, b); return b; },
       entries: {
         list: async (bookId: string) => { const data = [...entries.values()].filter(e => e.bookId === bookId); return { data, total: data.length }; },
-        create: async (bookId: string, input: Record<string, unknown>) => { const e = { ...input, bookId, id: nid('entry') }; entries.set(e.id, e); return e; },
+        create: async (bookId: string, input: Record<string, unknown>) => { const e = { key: [], comment: '', content: '', constant: false, disabled: false, extensions: {}, ...input, bookId, world_book_id: bookId, id: nid('entry') }; entries.set(e.id, e); return e; },
+        get: async (id: string) => entries.get(id) ?? null,
+        update: async (id: string, input: Record<string, unknown>) => { const e = { ...entries.get(id), ...input }; entries.set(id, e); return e; },
         delete: async (id: string) => entries.delete(id),
       },
     },
@@ -48,6 +52,11 @@ function fakeHost(replies: string[], lumicast = true) {
       create: async (input: Record<string, unknown>) => { const p = { ...input, id: nid('persona') }; personas.set(p.id, p); return p; },
       update: async (id: string, input: Record<string, unknown>) => { const p = { ...personas.get(id), ...input }; personas.set(id, p); return p; },
     },
+    chats: {
+      list: async (o: { characterId: string }) => ({ data: chats.filter(c => c.character_id === o.characterId), total: 1 }),
+      get: async (id: string) => chats.find(c => c.id === id) ?? null,
+    },
+    chat: { getMessages: async () => [{ name: 'Jason', is_user: true, content: 'Sorry I lied.', role: 'user' }, { name: 'Vesper', is_user: false, content: 'Already forgiven!', role: 'assistant' }] },
     rpcPool: {
       sync: (endpoint: string, value: unknown) => { pool.set(`paige.${endpoint}`, value); return `paige.${endpoint}`; },
       read: async (endpoint: string) => { if (lumicast && endpoint === 'lumicast.paige.start') return { ok: true, count: (pool.get('paige.cast') as { characters: unknown[] }).characters.length }; throw new Error(`Endpoint ${endpoint} is not registered`); },
@@ -64,7 +73,7 @@ function fakeHost(replies: string[], lumicast = true) {
     }
     throw new Error('no reply');
   };
-  return { call, store, sent, characters, entries, personas, pool, requests };
+  return { call, store, sent, characters, entries, personas, pool, requests, chats, books };
 }
 
 describe('Paige backend', () => {
@@ -168,5 +177,61 @@ describe('Paige backend', () => {
     expect(sent.state).toBe('started');
     expect((host.pool.get('paige.cast') as { characters: { name: string }[] }).characters.map(c => c.name)).toEqual(['Ash']);
     expect((await host.call<{ state: string }>('sendLooks', { only: [] })).state).toBe('skipped');
+  });
+  test('bring a card back, fix it, read the roleplay, save in place and as a copy', async () => {
+    const host = fakeHost([
+      '"Found it."\n```\nMain character\nName: Vesper\nVesper is a smuggler. She holds grudges for days.\n```\n```\nLore\nName: Rusty Gear\nTrigger words: Rusty Gear, tavern\n\nA loud tavern.\n```\n```\nSide character\nName: Ash\n## Look\nTall.\n```',
+      '"Copy it is."',
+    ]);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });
+    host.books.set('bk', { id: 'bk', name: 'Hesk' });
+    host.entries.set('e1', { id: 'e1', bookId: 'bk', world_book_id: 'bk', key: ['Rusty Gear'], comment: 'Rusty Gear', content: 'A tavern.', constant: false, disabled: false, extensions: {}, position: 2, depth: 4 });
+    host.characters.set('v', { id: 'v', name: 'Vesper', description: 'Vesper is a smuggler.', scenario: 'Fog.', personality: '', mes_example: '', system_prompt: '', post_history_instructions: '', first_mes: 'Fog rolls in.', alternate_greetings: [], world_book_ids: ['bk'], image_id: 'img', extensions: {}, updated_at: 5 });
+    host.chats.push({ id: 'ch1', character_id: 'v', name: 'Night one', updated_at: 9 });
+    const cards = await host.call<{ id: string; name: string }[]>('listCards');
+    expect(cards.map(c => c.name)).toContain('Vesper');
+    const brought = await host.call<{ session: { blocks: { type: string; name: string }[]; turns: { content: string }[]; source: { name: string } } }>('bringCard', { characterId: 'v' });
+    expect(brought.session.source.name).toBe('Vesper');
+    expect(brought.session.blocks.map(b => b.type)).toEqual(['Main character', 'Scenario', 'First message', 'Lore']);
+    expect(brought.session.turns[0].content).toContain('Back in the shop');
+    expect(await host.call<unknown[]>('listChats')).toEqual([{ id: 'ch1', name: 'Night one', updatedAt: 9 }]);
+    const rp = await host.call<{ count: number; words: number }>('setRoleplay', { on: true, chatId: 'ch1' });
+    expect(rp.count).toBe(2);
+    await host.call('send', { text: 'She forgives me way too fast.' });
+    const prompt = (host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content;
+    expect(prompt).toContain('Fixing mode');
+    expect(prompt).toContain('Vesper: Already forgiven!');
+    // Save in place: only what changed, entry edited where it lives, new piece in a Paige lorebook.
+    const saved = await host.call<{ updated: boolean; changes: string[]; name: string }>('makeCard', { asCopy: false });
+    expect(saved).toMatchObject({ updated: true, name: 'Vesper' });
+    const v = host.characters.get('v')!;
+    expect(v.description).toBe('Vesper is a smuggler. She holds grudges for days.');
+    expect(v.scenario).toBe('Fog.');
+    expect(host.entries.get('e1')).toMatchObject({ content: 'A loud tavern.', key: ['Rusty Gear', 'tavern'], position: 2 });
+    expect((v.world_book_ids as string[]).length).toBe(2);
+    expect([...host.entries.values()].some(e => e.comment === 'Side character · Ash')).toBe(true);
+    // Saving again with no changes changes nothing.
+    const again = await host.call<{ changes: string[] }>('makeCard', { asCopy: false });
+    expect(again.changes).toEqual([]);
+    // A copy leaves the original alone and gets its own lorebook.
+    await host.call('send', { text: 'make a copy' });
+    const copy = await host.call<{ copy: boolean; name: string; notes: string[] }>('makeCard', { asCopy: true, name: '' });
+    expect(copy).toMatchObject({ copy: true, name: 'Vesper (fixed)' });
+    expect(copy.notes.join(' ')).toContain('no picture');
+    const made = [...host.characters.values()].find(c => c.name === 'Vesper (fixed)')!;
+    expect((made.world_book_ids as string[]).length).toBe(1);
+    const copied = [...host.entries.values()].filter(e => e.bookId === (made.world_book_ids as string[])[0]);
+    expect(copied.map(e => e.comment).sort()).toEqual(['Rusty Gear', 'Side character · Ash']);
+    expect(copied.find(e => e.comment === 'Rusty Gear')).toMatchObject({ position: 2, depth: 4 });
+    expect(host.characters.get('v')!.name).toBe('Vesper');
+  });
+
+  test('reading the roleplay without the permissions says which to grant', async () => {
+    const host = fakeHost(['hi'], true, ['chat_mutation']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });
+    host.characters.set('v', { id: 'v', name: 'Vesper', description: 'x', scenario: '', personality: '', mes_example: '', system_prompt: '', post_history_instructions: '', first_mes: '', alternate_greetings: [], world_book_ids: [], extensions: {}, updated_at: 1 });
+    host.chats.push({ id: 'ch1', character_id: 'v', name: 'Night one', updated_at: 9 });
+    await host.call('bringCard', { characterId: 'v' });
+    await expect(host.call('setRoleplay', { on: true, chatId: 'ch1' })).rejects.toThrow('chat_mutation');
   });
 });

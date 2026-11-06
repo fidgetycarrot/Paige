@@ -8,7 +8,7 @@ Paige, her personality and her whole interview are by **Deiomo** ([deiomo.github
 
 In Lumiverse, open Extensions and install from GitHub: `https://github.com/fidgetycarrot/Paige`
 
-Give it these permissions: generation, characters, world_books, personas.
+Give it these permissions: generation, characters, world_books, personas. For **Let Paige read the roleplay** (optional), also chats and chat_mutation; Paige only reads chats with them, never changes one.
 
 ## Use
 
@@ -29,6 +29,15 @@ Give it these permissions: generation, characters, world_books, personas.
 **Save a backup** in Settings downloads the whole chat and notebook as a file. **Load a backup** brings one back, and also takes Paige's own `session.json` from her storage folder. Whatever was open is kept in Paige's storage.
 
 **Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again. **Start over** in Settings clears the chat and notebook for a new card; the old chat is kept in Paige's storage.
+
+## Fixing a card you've played
+
+**Bring a card** (top of the panel) lists your cards. Pick one, any card, not just ones Paige made, and she reads the whole card and its lorebook into a fresh notebook. What was open before is kept in her storage. Then tell her what went wrong in play. She finds the piece causing it, pushes back if your fix won't fix it, and rewrites only the pieces that need it.
+
+- **Let Paige read the roleplay**: switch it on and pick one of the card's chats. Paige reads the end of it (about the last 24,000 characters) with every message you send her, so she can see the problem herself. It costs more per message, so switch it off once she's seen enough.
+- **Update "card name"** saves only the pieces that changed, back where they came from: the description, scenario and other card fields, the greetings, and each lorebook entry in its own lorebook. A piece you delete from the notebook is switched off in the lorebook, not deleted, in case another card shares it. New pieces go into a "· Paige" lorebook attached to the card.
+- **Save as a copy instead** leaves the original card exactly as it is (for chats you don't want changed) and makes a new card with its own copy of the lorebook. The copy has no picture; add one in Lumiverse. After that, Update saves to the copy.
+- A very big lorebook (over 300 active entries) only brings its first 300 into the notebook; the rest stay as they are.
 
 ## LumiCast and Lumi Studio
 

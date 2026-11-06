@@ -1,6 +1,6 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
-import type { CardResult, CastStatus, LumiCastStatus, Session, Snapshot } from './contracts';
+import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Snapshot } from './contracts';
 import { MARKER_WOFF2 } from './font';
 
 export function createRpc(ctx: Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>, onSession: (session: Session, busy: boolean) => void, timeout = 320_000) {
@@ -191,6 +191,19 @@ const STYLES = `
 .pg-note{font-size:12px;line-height:1.5;color:var(--pg-pencil)}
 /* Make my card: the page you tear out at the end. */
 .pg-make{margin-top:34px;padding-top:22px;border-top:2px dashed #a99ccc55;position:relative}
+.pg-bring{margin-left:auto}.pg-bring~.pg-full-btn,.pg-bring~.pg-layout{margin-left:8px}
+.pg-fixbar{padding:8px 18px;border-bottom:1px solid var(--pg-edge);background:var(--pg-desk);line-height:1.4}
+.pg-fix-line{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pg-fix-title{font:400 17px/1.2 var(--pg-hand);color:var(--pg-violet);margin-right:auto}
+.pg-fix-read{display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer}
+.pg-fix-read input{accent-color:var(--pg-violet)}
+.pg-app .pg-fixbar select{width:auto;max-width:240px;padding:4px 8px;font-size:13px}
+.pg-fix-note{margin-top:4px}
+.pg-cards-title{font:400 24px/1.2 var(--pg-hand);color:var(--pg-violet);margin:0 0 6px;transform:rotate(-1deg);transform-origin:left}
+.pg-card-list{display:flex;flex-direction:column;gap:6px;margin:14px 0 18px}
+.pg-card-pick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--pg-card);border:1px solid var(--pg-edge);border-left:3px solid var(--pg-margin);border-radius:4px;color:var(--pg-ink);padding:9px 12px;font:inherit;cursor:pointer;line-height:1.35}
+.pg-card-pick:hover{border-color:var(--pg-violet)}
+.pg-confirm{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px 12px}
 .pg-pick{border:1px dashed var(--pg-edge);border-radius:8px;padding:4px 14px 12px;margin:12px 0}
 .pg-cast{margin-top:14px;border-left:3px solid var(--pg-violet);padding:4px 0 4px 14px;line-height:1.45}
 .pg-cast-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -232,7 +245,8 @@ const STYLES = `
 .pg-app.pg-full .pg-top{padding-top:18px}
 .pg-app.pg-full .pg-title{font-size:40px}
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{padding-top:6px}
-@media (max-width:759px){.pg-full-btn{display:none}}
+@media (max-width:759px){.pg-full-btn:not(.pg-bring){display:none}}
+@media (max-width:480px){.pg-bring{padding:5px 8px}.pg-fixbar{padding:8px 12px}}
 @media (max-width:480px){.pg-app{--pg-m:26px}.pg-top{padding:12px 14px 2px}.pg-sub{display:none}.pg-log{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-scroll{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-compose{padding:8px 12px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:6px 10px 0}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-pulse{animation:pg-pulse 1.2s ease-in-out infinite}@keyframes pg-pulse{50%{opacity:.25;transform:scale(.7)}}.pg-now .pg-cast-mark{display:inline-block;animation:pg-scribble 1.1s ease-in-out infinite}.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
 `;
@@ -323,13 +337,17 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     show(current);
   }
   layoutSwitch.hidden = true;
-  top.append(heading, sub, layoutSwitch, fullButton);
+  const bringButton = el('button', 'Bring a card', 'pg-full-btn pg-bring'); bringButton.type = 'button';
+  bringButton.title = 'Bring a card you’ve played back to Paige to fix it';
+  bringButton.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/></svg>');
+  top.append(heading, sub, bringButton, layoutSwitch, fullButton);
   const tabs = el('div', undefined, 'pg-tabs'); tabs.setAttribute('role', 'tablist');
   const views: Record<'chat' | 'sheet' | 'settings', HTMLElement> = { chat: el('section', undefined, 'pg-view'), sheet: el('section', undefined, 'pg-view'), settings: el('section', undefined, 'pg-view') };
   views.sheet.id = 'pg-sheet-view';
   const tabButtons = {} as Record<keyof typeof views, HTMLButtonElement>;
   function show(name: keyof typeof views) {
     current = name;
+    cardsView.hidden = true; tabs.hidden = false;
     // Side by side keeps the notebook open on the right, so the left side shows the chat or settings.
     const split = app.classList.contains('pg-split');
     const left = split && name === 'sheet' ? 'chat' : name;
@@ -343,7 +361,9 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     const b = el('button', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.addEventListener('click', () => show(key));
     tabButtons[key] = b; tabs.append(b);
   }
-  const panes = el('div', undefined, 'pg-panes'); panes.append(views.chat, views.settings, views.sheet);
+  // Picking a card to bring back: its own page, over the tabs, until a card is picked or Cancel.
+  const cardsView = el('section', undefined, 'pg-view pg-cards'); cardsView.hidden = true;
+  const panes = el('div', undefined, 'pg-panes'); panes.append(views.chat, views.settings, views.sheet, cardsView);
   app.append(top, tabs, panes);
 
   // ── Chat ──
@@ -371,7 +391,16 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const status = el('div', undefined, 'pg-status'); status.setAttribute('role', 'status');
   const row = el('div', undefined, 'pg-row'); row.append(box, sendButton, stopButton, retryButton);
   compose.append(chips, row, status);
-  views.chat.append(log, compose);
+  // When a card is back for fixes: which card, and the switch that lets Paige read one of its chats.
+  const fixBar = el('div', undefined, 'pg-fixbar'); fixBar.hidden = true;
+  const fixTitle = el('span', '', 'pg-fix-title');
+  const readBox = el('input'); readBox.type = 'checkbox';
+  const readRow = el('label', undefined, 'pg-fix-read'); readRow.append(readBox, el('span', 'Let Paige read the roleplay'));
+  const chatPick = el('select'); chatPick.setAttribute('aria-label', 'Which chat Paige reads'); chatPick.hidden = true;
+  const readNote = el('div', '', 'pg-note pg-fix-note');
+  const fixLine = el('div', undefined, 'pg-fix-line'); fixLine.append(fixTitle, readRow, chatPick);
+  fixBar.append(fixLine, readNote);
+  views.chat.append(fixBar, log, compose);
   const grow = () => { box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`; };
   box.addEventListener('input', grow);
   // Paige always fills exactly the visible part of the screen, so only her chat scrolls, never the drawer around
@@ -455,15 +484,23 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const pick = el('div', undefined, 'pg-pick'); pick.hidden = true;
   // LumiCast's progress, one line per person.
   const cast = el('div', undefined, 'pg-cast'); cast.hidden = true; cast.setAttribute('role', 'status');
-  make.append(makeTitle, makeHint, nameField, looksRow, makeRow, pick, makeStatus, cast);
+  const copyBox = el('input'); copyBox.type = 'checkbox';
+  const copyRow = el('label', undefined, 'pg-check'); copyRow.append(copyBox, el('span', 'Save as a copy instead. The original card stays exactly as it is, for chats you don’t want changed.'));
+  copyRow.hidden = true;
+  copyBox.addEventListener('change', () => { if (copyBox.checked && !cardName.value && session?.source) cardName.value = `${session.source.name} (fixed)`; renderSheet(); });
+  make.append(makeTitle, makeHint, copyRow, nameField, looksRow, makeRow, pick, makeStatus, cast);
   sheetScroll.append(pieces, make);
   views.sheet.append(sheetScroll);
   makeButton.addEventListener('click', () => void act(async () => {
-    makeNotify('Making the card…');
-    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked });
+    const fixing = !!session?.source, asCopy = fixing && copyBox.checked;
+    makeNotify(fixing ? (asCopy ? 'Saving the copy…' : 'Saving the fixes…') : 'Making the card…');
+    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked, asCopy });
     session = result.session;
+    if (asCopy) { copyBox.checked = false; }
     const made = [
-      `${result.updated ? 'Updated' : 'Made'} “${result.name}” with ${result.entries} lorebook ${result.entries === 1 ? 'entry' : 'entries'} and ${result.greetings} ${result.greetings === 1 ? 'greeting' : 'greetings'}.`,
+      fixing ? (result.changes?.length ? `${asCopy ? `Saved the copy “${result.name}”` : `Saved to “${result.name}”`}. Changed: ${result.changes.join(', ')}.` : asCopy ? `Saved the copy “${result.name}”. Nothing was changed from the original.` : 'Nothing changed since the last save, so the card was left alone.')
+        : `${result.updated ? 'Updated' : 'Made'} “${result.name}” with ${result.entries} lorebook ${result.entries === 1 ? 'entry' : 'entries'} and ${result.greetings} ${result.greetings === 1 ? 'greeting' : 'greetings'}.`,
+      asCopy ? 'From here on, Update saves to the copy.' : '',
       result.personaName ? `Persona “${result.personaName}” is ready.` : '', result.personaNote, ...result.notes,
     ].filter(Boolean);
     makeNotify(made.join('\n'));
@@ -736,6 +773,86 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     return box;
   }
 
+  // ── Bringing a card back ──
+  let cardList: CardListItem[] = [];
+  bringButton.addEventListener('click', () => void openCards());
+  async function openCards() {
+    if (busy) return;
+    if (full && layout === 'split') app.classList.remove('pg-split');
+    for (const view of Object.values(views)) view.hidden = true;
+    tabs.hidden = true; cardsView.hidden = false;
+    cardsView.replaceChildren();
+    const scroll = el('div', undefined, 'pg-scroll pg-page');
+    const head = el('h3', 'Bring a card to Paige', 'pg-cards-title');
+    const note = el('p', 'Pick a card you’ve been playing. Paige reads the whole card and its lorebook into a fresh notebook, then you tell her what went wrong. What’s open now is kept in Paige’s storage.', 'pg-note');
+    const search = el('input'); search.type = 'text'; search.placeholder = 'Find a card…'; search.setAttribute('aria-label', 'Find a card');
+    const list = el('div', undefined, 'pg-card-list'); list.append(el('p', 'Loading your cards…', 'pg-note'));
+    const cancel = el('button', 'Cancel', 'pg-btn'); cancel.type = 'button';
+    cancel.addEventListener('click', () => { applyLayout(); show(current); });
+    scroll.append(head, note, search, list, cancel);
+    cardsView.append(scroll);
+    const draw = () => {
+      list.replaceChildren();
+      const words = search.value.trim().toLowerCase();
+      const shown = cardList.filter(c => !words || c.name.toLowerCase().includes(words)).slice(0, 80);
+      if (!shown.length) list.append(el('p', cardList.length ? 'No card matches that.' : 'You don’t have any cards yet.', 'pg-note'));
+      for (const card of shown) {
+        const b = el('button', undefined, 'pg-card-pick'); b.type = 'button';
+        b.append(el('span', card.name, 'pg-card-name'), el('span', [card.paige ? 'made with Paige' : '', card.updatedAt ? `changed ${new Date(card.updatedAt * (card.updatedAt < 1e12 ? 1000 : 1)).toLocaleDateString()}` : ''].filter(Boolean).join(', '), 'pg-card-tag'));
+        b.addEventListener('click', () => {
+          list.querySelectorAll('.pg-confirm').forEach(n => n.remove());
+          const confirm = el('div', undefined, 'pg-confirm');
+          const yes = el('button', `Bring “${card.name}”`, 'pg-btn pg-primary'); yes.type = 'button';
+          const no = el('button', 'Not this one', 'pg-btn'); no.type = 'button';
+          confirm.append(yes, no); b.after(confirm); yes.focus();
+          no.addEventListener('click', () => confirm.remove());
+          yes.addEventListener('click', () => void act(async () => {
+            yes.textContent = 'Reading the card…';
+            const result = await rpc.request<{ session: Session; skipped: number }>('bringCard', { characterId: card.id });
+            session = result.session; cardName.value = ''; makeStatus.textContent = ''; cast.hidden = true;
+            applyLayout(); show('chat'); renderLog(true);
+            notify(result.skipped ? `The lorebook is very big, so ${result.skipped} entries stayed out of the notebook. They’re left as they are.` : '');
+          }));
+        });
+        list.append(b);
+      }
+    };
+    search.addEventListener('input', draw);
+    try { cardList = await rpc.request<CardListItem[]>('listCards'); draw(); search.focus(); }
+    catch (e) { list.replaceChildren(el('p', e instanceof Error ? e.message : 'Couldn’t load your cards.', 'pg-note')); }
+  }
+
+  let chats: ChatListItem[] = [];
+  function renderFixBar() {
+    const source = session?.source;
+    fixBar.hidden = !source;
+    if (!source) return;
+    fixTitle.textContent = `Fixing “${source.name}”`;
+    const rp = session?.roleplay;
+    readBox.checked = !!rp?.on;
+    chatPick.hidden = !rp?.on;
+    if (!rp?.on) readNote.textContent = 'Off: Paige only knows what you tell her. On, she reads the end of one of this card’s chats with every message, which costs more.';
+  }
+  async function loadChats() {
+    chats = await rpc.request<ChatListItem[]>('listChats');
+    chatPick.replaceChildren(...chats.map(c => { const o = el('option', `${c.name} · ${new Date(c.updatedAt * (c.updatedAt < 1e12 ? 1000 : 1)).toLocaleDateString()}`); o.value = c.id; return o; }));
+  }
+  async function setReading(on: boolean, chatId = '') {
+    const result = await rpc.request<{ session: Session; words: number; count: number }>('setRoleplay', { on, chatId });
+    session = result.session;
+    renderFixBar();
+    if (on) readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time. Switch it off when she’s seen enough.`;
+  }
+  readBox.addEventListener('change', () => void act(async () => {
+    if (!readBox.checked) { await setReading(false); return; }
+    await loadChats();
+    if (!chats.length) { readBox.checked = false; readNote.textContent = 'This card has no chats yet, so there’s nothing for Paige to read.'; return; }
+    const keep = session?.roleplay?.chatId && chats.some(c => c.id === session!.roleplay!.chatId) ? session.roleplay.chatId : chats[0].id;
+    chatPick.value = keep;
+    await setReading(true, keep);
+  }));
+  chatPick.addEventListener('change', () => void act(() => setReading(true, chatPick.value)));
+
   function renderSheet() {
     const open = new Set([...pieces.querySelectorAll<HTMLDetailsElement>('details[open]')].map(d => d.dataset.id));
     pieces.replaceChildren();
@@ -752,8 +869,16 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     const main = blocks.find(b => b.type === 'Main character');
     cardName.placeholder = main?.name || 'Name the card';
     if (!cardName.value && session?.card?.name) cardName.value = session.card.name;
-    makeTitle.textContent = session?.card ? 'Update my card' : 'Make my card';
-    makeButton.textContent = session?.card ? `Update “${session.card.name}”` : 'Make my card';
+    const fixing = session?.source;
+    copyRow.hidden = !fixing;
+    if (!fixing) copyBox.checked = false;
+    nameField.hidden = !!fixing && !copyBox.checked;
+    makeTitle.textContent = fixing ? 'Save my fixes' : session?.card ? 'Update my card' : 'Make my card';
+    makeHint.textContent = fixing
+      ? 'Puts the fixes back into the card. Only pieces that changed are saved; everything else stays as it is. A piece you delete here is switched off in the lorebook, not deleted, in case another card shares it.'
+      : 'Tears this notebook out into a card. The main character goes in the description, the scenario in the scenario field, and everyone and everything else in the card’s lorebook. Kept first messages become the greetings.';
+    makeButton.textContent = fixing ? (copyBox.checked ? 'Save the copy' : `Update “${fixing.name}”`) : session?.card ? `Update “${session.card.name}”` : 'Make my card';
+    renderFixBar();
     resendButton.hidden = !session?.card;
     const count = blocks.filter(b => b.type !== 'First message').length;
     tabButtons.sheet.textContent = count ? `Notebook (${count})` : 'Notebook';
@@ -765,7 +890,8 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     sendButton.disabled = working; box.disabled = false; retryButton.disabled = working || !session || session.turns.length < 2;
     for (const b of chips.querySelectorAll('button')) (b as HTMLButtonElement).disabled = working;
     modeButtons.forEach((b, i) => b.setAttribute('aria-pressed', String((session?.mode ?? 'full') === (['full', 'quick'] as Mode[])[i])));
-    makeButton.disabled = working || !session?.blocks.some(b => b.type !== 'First message');
+    makeButton.disabled = working || (!session?.source && !session?.blocks.some(b => b.type !== 'First message'));
+    bringButton.disabled = working; readBox.disabled = working; chatPick.disabled = working;
     resendButton.disabled = working || !!castTimer; saveSettings.disabled = working; startOver.disabled = working; saveBackup.disabled = working; loadBackup.disabled = working; confirmLoad.disabled = working;
   }
 

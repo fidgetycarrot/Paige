@@ -1,6 +1,6 @@
 /** Reading Paige's finished blocks out of her replies, keeping the Sheet, and laying the Sheet out as a card. No host calls here. */
 
-export const BLOCK_TYPES = ['Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Persona', 'First message'] as const;
+export const BLOCK_TYPES = ['Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message'] as const;
 export type BlockType = typeof BLOCK_TYPES[number];
 export type Mode = 'full' | 'quick';
 export const LORE_TYPES: BlockType[] = ['Location', 'Item', 'Faction', 'History', 'Concept'];
@@ -16,7 +16,13 @@ export interface Block {
   keep?: boolean;
   /** True once the user changed it on the Sheet. */
   edited?: boolean;
+  /** Where a piece of a card brought back to Paige lives in Lumiverse, so a fix goes back to the same place. */
+  source?: BlockSource;
+  /** The text as it was when the card was brought in; anything different is a change to save. */
+  origin?: string;
 }
+export type CardField = 'description' | 'scenario' | 'personality' | 'mes_example' | 'system_prompt' | 'post_history_instructions';
+export interface BlockSource { field?: CardField; entryId?: string; bookId?: string; foreign?: boolean }
 
 const LABELS: Record<string, BlockType> = {
   'main character': 'Main character', 'main': 'Main character', 'character': 'Main character',
@@ -24,6 +30,8 @@ const LABELS: Record<string, BlockType> = {
   'scenario': 'Scenario',
   'location': 'Location', 'item': 'Item', 'faction': 'Faction', 'history': 'History', 'history event': 'History', 'event': 'History', 'concept': 'Concept',
   'persona': 'Persona', 'user persona': 'Persona',
+  'lore': 'Lore', 'lore entry': 'Lore', 'lorebook entry': 'Lore', 'entry': 'Lore',
+  'card field': 'Card field', 'field': 'Card field',
   'first message': 'First message', 'greeting': 'First message', 'opening message': 'First message', 'alternate greeting': 'First message',
 };
 
@@ -62,9 +70,13 @@ export function parseBlocks(reply: string): ParsedBlock[] {
       if (!type) continue;
       content = lines.slice(first + 1).join('\n');
     }
-    const body = content.trim();
+    let body = content.trim();
     if (!body) continue;
-    const name = type === 'Scenario' ? (fieldOf(body, 'Name') || 'Scenario') : type === 'First message' ? '' : (nameLine.exec(body)?.[1]?.replace(/[*_]+/g, '').trim() ?? '');
+    // A first message only carries a Name line when it's replacing one ("Name: First message 2"); the line isn't part of the message.
+    const firstName = type === 'First message' ? /^[ \t]*[*_]*Name[*_]*[ \t]*:[*_]*[ \t]*(First message[^\n]*?)[ \t]*\n/i.exec(body) : null;
+    if (firstName) body = body.slice(firstName[0].length).trim();
+    if (!body) continue;
+    const name = type === 'Scenario' ? (fieldOf(body, 'Name') || 'Scenario') : type === 'First message' ? (firstName?.[1].replace(/[*_]+/g, '').trim() ?? '') : (nameLine.exec(body)?.[1]?.replace(/[*_]+/g, '').trim() ?? '');
     found.push({ type, name: name.slice(0, 120) || (type === 'First message' ? '' : type), body });
   }
   return found;
@@ -85,7 +97,15 @@ export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.n
         replaced.push(next[index]);
         continue;
       }
-    } else if (next.some(b => b.type === 'First message' && b.body.trim() === p.body.trim())) continue;
+    } else {
+      const index = p.name ? next.findIndex(b => b.type === 'First message' && same(b.name, p.name)) : -1;
+      if (index >= 0) {
+        next[index] = { ...next[index], body: p.body, updatedAt: now, edited: false };
+        replaced.push(next[index]);
+        continue;
+      }
+      if (next.some(b => b.type === 'First message' && b.body.trim() === p.body.trim())) continue;
+    }
     const block: Block = { id: id(), type: p.type, name: p.name || (p.type === 'First message' ? `First message ${next.filter(b => b.type === 'First message').length + 1}` : p.type), body: p.body, updatedAt: now, ...(p.type === 'First message' ? { keep: true } : {}) };
     next.push(block);
     added.push(block);
@@ -93,8 +113,19 @@ export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.n
   return { sheet: next, added, replaced };
 }
 
+/** A piece as Paige sees it. Pieces whose text has no Name line (from a card she didn't make) get one, so she can refer to them. */
 export function fence(block: Block): string {
-  return '```\n' + block.type + '\n' + block.body.trim() + '\n```';
+  const body = block.body.trim();
+  const named = block.type === 'Scenario' || nameLine.test(body) || (block.type === 'First message' && !block.source && !block.origin);
+  return '```\n' + block.type + '\n' + (named ? '' : `Name: ${block.name}\n`) + body + '\n```';
+}
+
+/** Takes off a Name line Paige put on top of text that didn't have one, so it doesn't leak into the card. */
+export function withoutAddedName(block: Block): string {
+  const body = block.body.trim();
+  const had = block.origin !== undefined && nameLine.test(block.origin.split('\n')[0] ?? '');
+  if (had || block.type === 'Main character' && block.origin === undefined) return body;
+  return body.replace(/^[ \t]*[*_]*Name[*_]*[ \t]*:.*\n?/i, '').trim();
 }
 
 /** "## Appearance & vibe" sections, by title. */
