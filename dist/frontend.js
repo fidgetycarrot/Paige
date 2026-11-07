@@ -1468,7 +1468,7 @@ function setup(ctx, options = {}) {
     renderLog(true);
     renderSheet();
     update();
-    const missing = Object.entries(snapshot.permissions).filter(([, ok]) => !ok).map(([p]) => p.replace("_", " "));
+    const missing = ["generation", "characters", "world_books"].filter((p) => !snapshot.permissions[p]).map((p) => p.replace("_", " "));
     if (!snapshot.settings.connectionId) {
       show("settings");
       settingsNotify("Pick the model connection Paige should use, then save.");

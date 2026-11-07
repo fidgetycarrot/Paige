@@ -906,7 +906,8 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     for (const c of snapshot.connections) { const o = el('option', `${c.name} · ${c.model}`); o.value = c.id; connection.append(o); }
     connection.value = snapshot.settings.connectionId; thinking.value = snapshot.settings.thinking;
     renderLog(true); renderSheet(); update();
-    const missing = (Object.entries(snapshot.permissions) as [string, boolean][]).filter(([, ok]) => !ok).map(([p]) => p.replace('_', ' '));
+    // Only what Paige can't work without. Personas, chats and chat_mutation are only needed for one feature each, and that feature says so when it's used.
+    const missing = (['generation', 'characters', 'world_books'] as const).filter(p => !snapshot!.permissions[p]).map(p => p.replace('_', ' '));
     if (!snapshot.settings.connectionId) { show('settings'); settingsNotify('Pick the model connection Paige should use, then save.'); }
     if (missing.length) notify(`Paige needs these permissions in Extensions: ${missing.join(', ')}.`, true);
   }
