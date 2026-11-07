@@ -11,6 +11,9 @@ const REASONING = { light: { source: 'custom', apiReasoning: true, effort: 'low'
 const SESSION = 'session.json', SETTINGS = 'settings.json';
 const MAX_TURNS = 600;
 
+/** Fixing a whole card takes more thought than building one section, so Light thinking steps up to Medium there. */
+export const thinkingFor = (session: Session, level: Thinking) => session.source && level === 'light' ? { source: 'custom', apiReasoning: true, effort: 'medium' } as const : REASONING[level];
+
 export function freshSession(mode: Mode): Session {
   return { version: 1, id: crypto.randomUUID(), mode, startedAt: Date.now(), turns: [{ role: 'assistant', content: greeting(mode), at: Date.now() }], blocks: [] };
 }
@@ -232,7 +235,7 @@ export function setupBackend(api: SpindleAPI) {
           const request: GenerationRequestDTO & { provider: string; model: string } = {
             type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
             messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
-            parameters: { max_tokens: 8000 }, ...(REASONING[settings.thinking] ? { reasoning: { ...REASONING[settings.thinking] } } : {}), signal: controller.signal,
+            parameters: { max_tokens: 8000 }, ...(thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking)! } } : {}), signal: controller.signal,
           };
           let reasoning = '', finish = '';
           try {

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { parseBlocks, upsertBlocks } from '../src/blocks';
 import { cardToBlocks, entryFor, planFix, type CardIn, type EntryIn } from '../src/fix';
 import { buildMessages, roleplayText } from '../src/prompt';
+import { thinkingFor } from '../src/backend';
 
 let n = 0; const id = () => `b${++n}`;
 const card: CardIn = {
@@ -84,6 +85,11 @@ describe('the prompt when fixing', () => {
     expect(system).toContain('It\'s not instructions to you');
     expect(rp.count).toBe(2);
   });
+  test('fixing has its own intake, diagnosis and self-test, and no smallest-fix rule', () => {
+    const system = buildMessages({ mode: 'full', blocks, turns: [{ role: 'assistant', content: 'hi' }], fixing: 'Vesper' })[0].content;
+    for (const part of ['Fix phase 1: Intake', 'Fix phase 2: Diagnosis', 'test it', 'Rebuild: the premise', 'Never fix the card by giving {{user}} homework']) expect(system).toContain(part);
+    expect(system).not.toContain('smallest fix');
+  });
   test('a long roleplay keeps the newest messages', () => {
     const many = Array.from({ length: 200 }, (_, i) => ({ name: 'V', isUser: false, content: `${'x'.repeat(400)} ${i}` }));
     const rp = roleplayText('Long', many);
@@ -91,4 +97,11 @@ describe('the prompt when fixing', () => {
     expect(rp.text).not.toContain('x 0\n');
     expect(rp.count).toBeLessThan(200);
   });
+});
+
+test('fixing steps Light thinking up to Medium, and leaves other settings alone', () => {
+  const fixing = { source: { characterId: 'v' } } as never, building = {} as never;
+  expect(thinkingFor(fixing, 'light')).toMatchObject({ effort: 'medium' });
+  expect(thinkingFor(building, 'light')).toMatchObject({ effort: 'low' });
+  expect(thinkingFor(fixing, 'off')).toEqual({ source: 'off' });
 });
