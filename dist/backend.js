@@ -160,6 +160,10 @@ ${parts.join(`
   }
   return looks;
 }
+function changedLooks(blocks) {
+  const before = new Map(looksFrom(blocks.filter((b) => b.origin !== undefined).map((b) => ({ ...b, body: b.origin }))).map((l) => [l.name.toLowerCase(), l.description]));
+  return looksFrom(blocks).filter((l) => before.get(l.name.toLowerCase()) !== l.description).map((l) => l.name);
+}
 var PLAYER_RULE = "This is the human-controlled player. These are starting facts, not a script. During live play the human supplies their actions, dialogue, thoughts, feelings and decisions.";
 function planCard(blocks, options = {}) {
   const of = (type) => blocks.filter((b) => b.type === type);
@@ -1274,6 +1278,7 @@ function setupBackend(api) {
       async function saveFixes(current, asCopy, copyName, looks) {
         const source = current.source;
         const plan = planFix(current.blocks, source);
+        const lookChanges = changedLooks(current.blocks);
         if (plan.persona && !api.permissions.has("personas"))
           throw new Error("Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.");
         const original = await api.characters.get(source.characterId, userId);
@@ -1355,7 +1360,7 @@ function setupBackend(api) {
         broadcast();
         let cast = null;
         if (looks)
-          cast = await sendLooks(current, target.name);
+          cast = lookChanges.length ? await sendLooks(current, target.name, lookChanges) : { state: "skipped", message: "Nobody\u2019s look changed, so nothing went to LumiCast." };
         return { copy: asCopy, changes: plan.summary, updated: !asCopy, name: target.name, entries: plan.updates.length + plan.create.length, greetings: plan.patch.first_mes !== undefined ? (plan.patch.first_mes ? 1 : 0) + (plan.patch.alternate_greetings?.length ?? 0) : 0, personaName, personaNote: "", notes, cast, session: current };
       }
     })().then((result) => reply(result)).catch((error) => {

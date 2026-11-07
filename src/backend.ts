@@ -1,5 +1,5 @@
 import type { SpindleAPI, GenerationRequestDTO } from 'lumiverse-spindle-types';
-import { BLOCK_TYPES, looksFrom, parseBlocks, planCard, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
+import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
 import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
@@ -376,6 +376,7 @@ export function setupBackend(api: SpindleAPI) {
       async function saveFixes(current: Session, asCopy: boolean, copyName: string, looks: boolean): Promise<CardResult> {
         const source = current.source!;
         const plan = planFix(current.blocks, source);
+        const lookChanges = changedLooks(current.blocks);
         if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
         const original = await api.characters.get(source.characterId, userId);
         if (!original) throw new Error('That card isn’t in Lumiverse anymore. Tick “Save as a copy” to save the fixes as a new card.');
@@ -439,8 +440,9 @@ export function setupBackend(api: SpindleAPI) {
         if (asCopy && current.roleplay) current.roleplay.on = false;
         current.card = { characterId: target.id, worldBookId: current.source?.paigeBookId ?? '', personaId, name: target.name, savedAt: Date.now() };
         await persist(); broadcast();
+        // Only people whose look changed, or who are new, go to LumiCast; everyone else is already in Lumi Studio.
         let cast: CastStatus | null = null;
-        if (looks) cast = await sendLooks(current, target.name);
+        if (looks) cast = lookChanges.length ? await sendLooks(current, target.name, lookChanges) : { state: 'skipped', message: 'Nobody’s look changed, so nothing went to LumiCast.' };
         return { copy: asCopy, changes: plan.summary, updated: !asCopy, name: target.name, entries: plan.updates.length + plan.create.length, greetings: plan.patch.first_mes !== undefined ? (plan.patch.first_mes ? 1 : 0) + (plan.patch.alternate_greetings?.length ?? 0) : 0, personaName, personaNote: '', notes, cast, session: current };
       }
     })().then(result => reply(result)).catch(error => {

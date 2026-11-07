@@ -475,7 +475,8 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const looks = el('input'); looks.type = 'checkbox';
   try { looks.checked = localStorage.getItem('paige.looks') !== '0'; } catch { looks.checked = true; }
   looks.addEventListener('change', () => { try { localStorage.setItem('paige.looks', looks.checked ? '1' : '0'); } catch { /* not kept */ } });
-  const looksRow = el('label', undefined, 'pg-check'); looksRow.append(looks, el('span', 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw'));
+  const looksText = el('span', 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw');
+  const looksRow = el('label', undefined, 'pg-check'); looksRow.append(looks, looksText);
   const makeButton = el('button', 'Make my card', 'pg-btn pg-primary'); makeButton.type = 'button';
   const resendButton = el('button', 'Choose who to send', 'pg-btn'); resendButton.type = 'button';
   const makeStatus = el('div', undefined, 'pg-status'); makeStatus.setAttribute('role', 'status');
@@ -871,6 +872,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (!cardName.value && session?.card?.name) cardName.value = session.card.name;
     const fixing = session?.source;
     copyRow.hidden = !fixing;
+    looksText.textContent = fixing ? 'Also send looks that are new or changed to LumiCast. Everyone else is left alone in Lumi Studio.' : 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw';
     if (!fixing) copyBox.checked = false;
     nameField.hidden = !!fixing && !copyBox.checked;
     makeTitle.textContent = fixing ? 'Save my fixes' : session?.card ? 'Update my card' : 'Make my card';

@@ -172,6 +172,12 @@ export function looksFrom(blocks: Block[]): Look[] {
   return looks;
 }
 
+/** Names whose look is new or different from when the card was brought in. */
+export function changedLooks(blocks: Block[]): string[] {
+  const before = new Map(looksFrom(blocks.filter(b => b.origin !== undefined).map(b => ({ ...b, body: b.origin! }))).map(l => [l.name.toLowerCase(), l.description]));
+  return looksFrom(blocks).filter(l => before.get(l.name.toLowerCase()) !== l.description).map(l => l.name);
+}
+
 export const PLAYER_RULE = 'This is the human-controlled player. These are starting facts, not a script. During live play the human supplies their actions, dialogue, thoughts, feelings and decisions.';
 
 export interface EntryPlan { comment: string; key: string[]; content: string; constant: boolean }

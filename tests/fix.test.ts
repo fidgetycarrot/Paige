@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseBlocks, upsertBlocks } from '../src/blocks';
+import { changedLooks, parseBlocks, upsertBlocks } from '../src/blocks';
 import { cardToBlocks, entryFor, planFix, type CardIn, type EntryIn } from '../src/fix';
 import { buildMessages, roleplayText } from '../src/prompt';
 import { thinkingFor } from '../src/backend';
@@ -104,4 +104,11 @@ test('fixing steps Light thinking up to Medium, and leaves other settings alone'
   expect(thinkingFor(fixing, 'light')).toMatchObject({ effort: 'medium' });
   expect(thinkingFor(building, 'light')).toMatchObject({ effort: 'low' });
   expect(thinkingFor(fixing, 'off')).toEqual({ source: 'off' });
+});
+
+test('only new or changed looks count when fixing', () => {
+  const { blocks } = cardToBlocks(card, entries, id, 1);
+  expect(changedLooks(blocks)).toEqual([]);
+  const sheet = upsertBlocks(blocks, parseBlocks('```\nSide character\nName: Mara Venn\n## Look\nShaved head.\n```\n```\nSide character\nName: Ash\n## Look\nTall.\n```'), 2, id).sheet;
+  expect(changedLooks(sheet)).toEqual(['Mara Venn', 'Ash']);
 });
