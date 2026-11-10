@@ -1,5 +1,6 @@
 /** Bringing a card back to Paige: card → notebook pieces, and the notebook's changes → back to the card. No host calls here. */
 import { fieldOf, LORE_TYPES, listOf, personaName, PLAYER_RULE, withoutAddedName, type Block, type BlockType, type CardField, type EntryPlan } from './blocks';
+import { uuid } from './safe-id';
 
 /** The card fields Paige can fix besides the description and scenario, with the names she uses for them. */
 export const FIELD_NAMES: Record<Exclude<CardField, 'description' | 'scenario'>, string> = {
@@ -29,7 +30,7 @@ const PAIGE_LABEL = /^\[(Main character|Side character|Scenario|Location|Item|Fa
 const ALWAYS = '(always on)';
 
 /** A card as notebook pieces. Paige's own entries come back as the pieces they were; anyone else's are Lore pieces. */
-export function cardToBlocks(card: CardIn, entries: EntryIn[], id: () => string = () => crypto.randomUUID(), now = Date.now()): { blocks: Block[]; source: CardSource } {
+export function cardToBlocks(card: CardIn, entries: EntryIn[], id: () => string = () => uuid(), now = Date.now()): { blocks: Block[]; source: CardSource } {
   const blocks: Block[] = [];
   const add = (type: BlockType, name: string, body: string, extra: Partial<Block> = {}) => {
     const text = body.replace(/\r/g, '').trim();

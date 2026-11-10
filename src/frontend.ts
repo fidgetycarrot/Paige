@@ -2,6 +2,7 @@ import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
 import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Snapshot } from './contracts';
 import { MARKER_WOFF2 } from './font';
+import { uuid } from './safe-id';
 
 export function createRpc(ctx: Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>, onSession: (session: Session, busy: boolean) => void, timeout = 320_000) {
   let closed = false;
@@ -18,7 +19,7 @@ export function createRpc(ctx: Pick<SpindleFrontendContext, 'sendToBackend' | 'o
   return {
     request<T>(action: string, input?: unknown, stream?: (text: string) => void): Promise<T> {
       if (closed) return Promise.reject(new Error('Paige is closed.'));
-      const id = crypto.randomUUID();
+      const id = uuid();
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => { pending.delete(id); reject(new Error('Lumiverse did not answer in time. Your session is saved.')); }, timeout);
         pending.set(id, { resolve: v => resolve(v as T), reject, timer, stream });

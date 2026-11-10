@@ -1,3 +1,4 @@
+import { uuid } from './safe-id';
 /** Reading Paige's finished blocks out of her replies, keeping the Sheet, and laying the Sheet out as a card. No host calls here. */
 
 export const BLOCK_TYPES = ['Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message'] as const;
@@ -85,7 +86,7 @@ export function parseBlocks(reply: string): ParsedBlock[] {
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** New version replaces the old one with the same type and name; first messages always add. Returns what changed, for the chat. */
-export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.now(), id: () => string = () => crypto.randomUUID()): { sheet: Block[]; added: Block[]; replaced: Block[] } {
+export function upsertBlocks(sheet: Block[], parsed: ParsedBlock[], now = Date.now(), id: () => string = () => uuid()): { sheet: Block[]; added: Block[]; replaced: Block[] } {
   const next = sheet.map(b => ({ ...b }));
   const added: Block[] = [], replaced: Block[] = [];
   for (const p of parsed) {

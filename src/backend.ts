@@ -4,6 +4,7 @@ import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
 import { record, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
+import { uuid } from './safe-id';
 
 const DEFAULTS: Settings = { connectionId: '', thinking: 'light' };
 // A light think keeps Paige quick; off and inherit are the user's choice.
@@ -15,7 +16,7 @@ const MAX_TURNS = 600;
 export const thinkingFor = (session: Session, level: Thinking) => session.source && level === 'light' ? { source: 'custom', apiReasoning: true, effort: 'medium' } as const : REASONING[level];
 
 export function freshSession(mode: Mode): Session {
-  return { version: 1, id: crypto.randomUUID(), mode, startedAt: Date.now(), turns: [{ role: 'assistant', content: greeting(mode), at: Date.now() }], blocks: [] };
+  return { version: 1, id: uuid(), mode, startedAt: Date.now(), turns: [{ role: 'assistant', content: greeting(mode), at: Date.now() }], blocks: [] };
 }
 
 /** Loose check of a saved session, so a damaged file can't break the panel. */
