@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { labelOf, looksFrom, parseBlocks, planCard, upsertBlocks, type Block } from '../src/blocks';
+import { labelOf, looksFrom, parseBlocks, planCard, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
 import { appNotes, buildMessages, greeting, paigeRules } from '../src/prompt';
 
 const reply = `*She slides the clipboard over.* "Done. Here's Mara."
@@ -199,5 +199,14 @@ describe('Paige prompt', () => {
     const messages = buildMessages({ mode: 'full', blocks: [], turns });
     expect(messages.some(m => m.content.includes('Older messages were trimmed'))).toBe(true);
     expect(messages.at(-2)!.content.endsWith('299')).toBe(true);
+  });
+});
+
+describe('cut-off replies', () => {
+  test('a piece that was started but never closed is found', () => {
+    expect(unfinishedPiece('Here.\n```\nScenario\nName: Port\nFog')).toBe('Scenario: Port');
+    expect(unfinishedPiece('```Lore\nName: The Vaults\nDeep')).toBe('Lore: The Vaults');
+    expect(unfinishedPiece('```\nScenario\nDone.\n```\nAll set.')).toBeNull();
+    expect(unfinishedPiece('No pieces at all.')).toBeNull();
   });
 });

@@ -129,6 +129,18 @@ function listOf(value) {
   const seen = new Set;
   return value.split(/[,;\/]/).map((v) => v.replace(/^["'\u201C\u201D]+|["'\u201C\u201D.]+$/g, "").trim()).filter((v) => v && !/^(?:none|n\/a|-)$/i.test(v) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
 }
+function unfinishedPiece(reply) {
+  const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
+  const rest = reply.replace(fences, `
+`);
+  const open = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*)$/.exec(rest);
+  if (!open)
+    return null;
+  const info = open[3].trim() || (open[4].split(`
+`).find((l) => l.trim()) ?? "").trim();
+  const name = fieldOf(open[4], "Name");
+  return [info, name].filter(Boolean).join(": ").slice(0, 120) || "a piece";
+}
 function parseBlocks(reply) {
   const found = [];
   const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
@@ -957,9 +969,15 @@ function readSession(value) {
   const v = record(value);
   if (v.version !== 1 || typeof v.id !== "string" || !Array.isArray(v.turns) || !Array.isArray(v.blocks))
     return null;
+  const cutOf = (v) => {
+    const c = record(v);
+    if (!["length", "stopped", "unfinished"].includes(String(c.why)))
+      return {};
+    return { cut: { why: c.why, finish: String(c.finish ?? "").slice(0, 60), ...typeof c.lost === "string" ? { lost: c.lost.slice(0, 120) } : {} } };
+  };
   const turns = v.turns.filter((t) => record(t).role === "user" || record(t).role === "assistant").map((t) => {
     const r = record(t);
-    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {} };
+    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut) };
   });
   const blocks = v.blocks.map((b) => record(b)).filter((b) => typeof b.id === "string" && BLOCK_TYPES.includes(String(b.type))).map((b) => ({
     id: String(b.id),
@@ -1265,7 +1283,7 @@ function setupBackend(api) {
             model: connection.model,
             userId,
             messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, "default")), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
-            parameters: { max_tokens: 8000 },
+            parameters: { max_tokens: 16000 },
             ...thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking) } } : {},
             signal: controller.signal
           };
@@ -1309,9 +1327,12 @@ function setupBackend(api) {
           const outcome = upsertBlocks(current.blocks, parsed);
           current.blocks = outcome.sheet;
           const saved = [...outcome.added.map((b) => `Added ${b.type.toLowerCase()}: ${b.name}`), ...outcome.replaced.map((b) => `Updated ${b.type.toLowerCase()}: ${b.name}`)];
-          current.turns.push({ role: "assistant", content: written.trim(), at: Date.now(), ...saved.length ? { saved } : {} });
+          const lost = unfinishedPiece(written);
+          const why = finish === "stopped" ? "stopped" : /length|max_tokens/i.test(finish) ? "length" : lost ? "unfinished" : null;
+          const cut = why ? { why, finish: finish || "none given", ...lost ? { lost } : {} } : undefined;
+          current.turns.push({ role: "assistant", content: written.trim(), at: Date.now(), ...saved.length ? { saved } : {}, ...cut ? { cut } : {} });
           await persist();
-          return { session: current, stopped: finish === "stopped", cutOff: /length|max_tokens/i.test(finish) };
+          return { session: current, stopped: why === "stopped", cutOff: why === "length" || why === "unfinished" };
         } finally {
           clearTimeout(timer);
           state.job = undefined;

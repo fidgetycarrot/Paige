@@ -168,6 +168,18 @@ describe('Paige backend', () => {
     expect((host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content).toContain('can’t read presets): Third person, limited');
   });
 
+  test('a reply that breaks off inside a piece is marked, and only finished pieces are saved', async () => {
+    const host = fakeHost(['```\nMain character\nName: Jory\nA dockworker.\n```\n```\nScenario\nName: Port\nFog rolls'], true, ['presets']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'off' });
+    const result = await host.call<{ cutOff: boolean; session: { blocks: { name: string }[]; turns: { cut?: { why: string; lost?: string } }[] } }>('send', { text: 'go' });
+    expect(result.cutOff).toBe(true);
+    expect(result.session.blocks.map(b => b.name)).toEqual(['Jory']);
+    expect(result.session.turns.at(-1)!.cut).toMatchObject({ why: 'unfinished', lost: 'Scenario: Port' });
+    // It's still marked after loading the session again.
+    const snap = await host.call<{ session: { turns: { cut?: { why: string } }[] } }>('snapshot');
+    expect(snap.session.turns.at(-1)!.cut?.why).toBe('unfinished');
+  });
+
   test('retry takes back the last reply and what it saved', async () => {
     const host = fakeHost(['```\nSide character\nName: Ash\n```', 'Plain reply, nothing saved.']);
     await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });

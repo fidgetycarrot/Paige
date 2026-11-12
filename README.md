@@ -30,6 +30,8 @@ Give it these permissions: generation, characters, world_books, personas, preset
 
 **First messages are written in** (Settings) picks the perspective for the first messages Paige writes. By default it matches your main chat preset: Paige reads that preset once to see how it writes (plain "third person" counts as from the outside), and again only when the preset changes. If the preset doesn't say, or the presets permission isn't given, she writes third person from the outside, never showing the main character's private thoughts. You can also pick a perspective yourself.
 
+If a reply ends before Paige finishes (it hits the length limit, or breaks off in the middle of a piece), a note under it says so and what didn't make it in, with **Ask her to finish**. The notebook also lists what isn't on the card yet, so you know when it's safe to play.
+
 **Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again. **Start over** in Settings clears the chat and notebook for a new card; the old chat is kept in Paige's storage.
 
 ## Fixing a card you've played

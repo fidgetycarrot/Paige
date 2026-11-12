@@ -3,6 +3,7 @@ import { BLOCK_TYPES, labelOf, looksFrom, type Block, type BlockType, type Mode 
 import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Settings, Snapshot } from './contracts';
 import { FALLBACK_POV, POV_NAMES, POVS, type PovSetting } from './perspective';
 import { MARKER_WOFF2 } from './font';
+import { changed } from './fix';
 import { uuid } from './safe-id';
 
 export function createRpc(ctx: Pick<SpindleFrontendContext, 'sendToBackend' | 'onBackendMessage'>, onSession: (session: Session, busy: boolean) => void, timeout = 320_000) {
@@ -88,17 +89,17 @@ function sheetBody(target: HTMLElement, body: string, skipName = true) {
 }
 
 /** A finished piece in the chat: an index card taped onto the page, folded shut. The full text lives in the notebook. */
-function ticket(type: BlockType, body: string): HTMLElement {
+function ticket(type: BlockType, body: string, tag = 'in your notebook'): HTMLElement {
   const box = el('details', undefined, 'pg-card');
   const name = type === 'Scenario' || type === 'First message' ? '' : (/^\s*[*_]*Name[*_]*\s*:\s*(.+)$/im.exec(body)?.[1] ?? '').replace(/[*_]+/g, '').trim();
   const head = el('summary');
-  head.append(el('span', type, 'pg-card-type'), el('span', name || (type === 'First message' ? body.trim().split('\n')[0].slice(0, 70) : ''), 'pg-card-name'), el('span', 'in your notebook', 'pg-card-tag'));
+  head.append(el('span', type, 'pg-card-type'), el('span', name || (type === 'First message' ? body.trim().split('\n')[0].slice(0, 70) : ''), 'pg-card-name'), el('span', tag, 'pg-card-tag'));
   const inner = el('div', undefined, 'pg-inner'); sheetBody(inner, body.trim());
   box.append(head, inner);
   return box;
 }
 
-function message(target: HTMLElement, text: string) {
+function message(target: HTMLElement, text: string, live = false) {
   const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)(?:\n[ \t]*\2[ \t]*(?=\n|$)|$)/g;
   let at = 0;
   for (const m of text.matchAll(fences)) {
@@ -112,7 +113,9 @@ function message(target: HTMLElement, text: string) {
       type = first >= 0 ? labelOf(lines[first]) : null;
       if (type) body = lines.slice(first + 1).join('\n');
     }
-    target.append(type ? ticket(type, body) : el('pre', body, 'pg-pre'));
+    // A piece with no closing line wasn't finished: still being written, or the reply broke off.
+    const open = !/\n[ \t]*(```+|~~~+)[ \t]*$/.test(m[0]);
+    target.append(type ? ticket(type, body, open ? (live ? 'writing…' : 'not finished, not saved') : 'in your notebook') : el('pre', body, 'pg-pre'));
   }
   prose(target, text.slice(at));
 }
@@ -156,6 +159,10 @@ const STYLES = `
 .pg-card summary::after{content:'›';color:var(--pg-pencil);transition:transform .15s}
 .pg-card[open] summary::after{transform:rotate(90deg)}
 .pg-saved{font-size:12px;line-height:1.5;color:var(--pg-pencil);margin-top:6px}
+.pg-cut{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid #ff9a7a66;background:#ff9a7a14;color:#ffc9b8;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pg-cut span{flex:1;min-width:180px}
+.pg-unsaved{font-size:13px;line-height:1.5;white-space:pre-wrap;margin:4px 0 8px;color:var(--pg-pencil)}
+.pg-unsaved[data-warn=true]{color:#ffc9b8}
 .pg-working{display:flex;align-items:center;gap:8px;color:var(--pg-pencil);font:400 16px/var(--pg-row) var(--pg-hand)}
 .pg-working svg{width:20px;height:20px;color:var(--pg-violet)}
 /* The bottom of the page, where you write. */
@@ -492,7 +499,8 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const copyRow = el('label', undefined, 'pg-check'); copyRow.append(copyBox, el('span', 'Save as a copy instead. The original card stays exactly as it is, for chats you don’t want changed.'));
   copyRow.hidden = true;
   copyBox.addEventListener('change', () => { if (copyBox.checked && !cardName.value && session?.source) cardName.value = `${session.source.name} (fixed)`; renderSheet(); });
-  make.append(makeTitle, makeHint, copyRow, nameField, looksRow, makeRow, pick, makeStatus, cast);
+  const unsaved = el('div', undefined, 'pg-unsaved'); unsaved.setAttribute('role', 'status');
+  make.append(makeTitle, makeHint, copyRow, nameField, looksRow, unsaved, makeRow, pick, makeStatus, cast);
   sheetScroll.append(pieces, make);
   views.sheet.append(sheetScroll);
   makeButton.addEventListener('click', () => void act(async () => {
@@ -681,11 +689,11 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       const result = await rpc.request<{ session: Session; stopped: boolean; cutOff: boolean }>(action, action === 'send' ? { text } : {}, partial => {
         if (!streaming) return;
         const keep = log.scrollTop;
-        streaming.text = partial; streaming.node.replaceChildren(); message(streaming.node, partial);
+        streaming.text = partial; streaming.node.replaceChildren(); message(streaming.node, partial, true);
         log.scrollTop = keep;
       });
       session = result.session;
-      if (result.cutOff) notify('Paige’s reply hit the length limit and was cut off. Press Retry, or ask her to finish.');
+      if (result.cutOff) notify('Paige got cut off before she finished. Ask her to finish, or press Retry.');
       else if (result.stopped) notify('Stopped. What she wrote so far is kept.');
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Paige didn’t answer.', true);
@@ -765,12 +773,28 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       if (turn.role === 'user') { node.textContent = turn.content; node.style.setProperty('--pg-tilt', ['.6deg', '-.5deg', '.3deg'][index % 3]); }
       else {
         message(node, turn.content);
-        if (turn.saved?.length) node.append(el('div', turn.saved.join(', ') + '. It’s in your notebook.', 'pg-saved'));
+        if (turn.saved?.length) node.append(el('div', turn.saved.join(', ') + (session!.card && turn.at > session!.card.savedAt ? '. It’s in your notebook, not on the card yet.' : '. It’s in your notebook.'), 'pg-saved'));
+        if (turn.cut) node.append(cutNote(turn.cut, index === lastSaved));
         if (index === lastSaved && Date.now() - turn.at < 4000) node.querySelectorAll('.pg-card').forEach(t => t.classList.add('pg-new'));
       }
       log.append(node);
     });
     log.scrollTop = toBottom || (wasBottom && !keepReading) ? log.scrollHeight : keep;
+  }
+
+  /** A lasting note under a reply that ended before Paige finished, so it can't be missed. */
+  function cutNote(cut: NonNullable<Session['turns'][number]['cut']>, latest: boolean): HTMLElement {
+    const note = el('div', undefined, 'pg-cut'); note.setAttribute('role', 'note');
+    const lost = cut.lost ? ` “${cut.lost}” never made it into your notebook.` : '';
+    note.append(el('span', cut.why === 'stopped'
+      ? `You stopped this reply, so it isn’t finished.${lost}`
+      : `Paige got cut off here before she finished${cut.why === 'length' ? ' (the reply hit the length limit)' : ''}.${lost} Don’t save the card yet.`));
+    if (latest) {
+      const finish = el('button', 'Ask her to finish', 'pg-btn'); finish.type = 'button';
+      finish.addEventListener('click', () => void sendText('You got cut off. Pick up where you stopped and finish the rest, writing out any piece that didn’t make it in full.'));
+      note.append(finish);
+    }
+    return note;
   }
 
   function piece(block: Block): HTMLDetailsElement {
@@ -916,9 +940,22 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       : 'Tears this notebook out into a card. The main character goes in the description, the scenario in the scenario field, and everyone and everything else in the card’s lorebook. Kept first messages become the greetings.';
     makeButton.textContent = fixing ? (copyBox.checked ? 'Save the copy' : `Update “${fixing.name}”`) : session?.card ? `Update “${session.card.name}”` : 'Make my card';
     renderFixBar();
+    renderUnsaved(blocks);
     resendButton.hidden = !session?.card;
     const count = blocks.filter(b => b.type !== 'First message').length;
     tabButtons.sheet.textContent = count ? `Notebook (${count})` : 'Notebook';
+  }
+
+  /** What isn't on the card yet, and a warning if Paige's last reply was cut off. */
+  function renderUnsaved(blocks: Block[]) {
+    const lines: string[] = [];
+    const last = [...(session?.turns ?? [])].reverse().find(t => t.role === 'assistant');
+    const warn = !!last?.cut && last.cut.why !== 'stopped';
+    if (warn) lines.push('Paige’s last reply was cut off, so the notebook may be missing pieces. Ask her to finish in the chat first.');
+    const pending = session?.source ? blocks.filter(changed) : session?.card ? blocks.filter(b => b.updatedAt > session!.card!.savedAt) : [];
+    if (pending.length) lines.push(`Not on the card yet: ${pending.map(b => b.name || b.type).join(', ')}.`);
+    else if (session?.card || session?.source) lines.push('Everything in the notebook is on the card.');
+    unsaved.textContent = lines.join('\n'); unsaved.hidden = !lines.length; unsaved.dataset.warn = String(warn);
   }
 
   function update() {

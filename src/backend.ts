@@ -1,5 +1,5 @@
 import type { SpindleAPI, GenerationRequestDTO } from 'lumiverse-spindle-types';
-import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
+import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, unfinishedPiece, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
 import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
@@ -24,9 +24,14 @@ export function freshSession(mode: Mode): Session {
 function readSession(value: unknown): Session | null {
   const v = record(value);
   if (v.version !== 1 || typeof v.id !== 'string' || !Array.isArray(v.turns) || !Array.isArray(v.blocks)) return null;
+  const cutOf = (v: unknown): Pick<Turn, 'cut'> => {
+    const c = record(v);
+    if (!['length', 'stopped', 'unfinished'].includes(String(c.why))) return {};
+    return { cut: { why: c.why as NonNullable<Turn['cut']>['why'], finish: String(c.finish ?? '').slice(0, 60), ...(typeof c.lost === 'string' ? { lost: c.lost.slice(0, 120) } : {}) } };
+  };
   const turns: Turn[] = v.turns.filter(t => record(t).role === 'user' || record(t).role === 'assistant').map(t => {
     const r = record(t);
-    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}) };
+    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}), ...cutOf(r.cut) };
   });
   const blocks: Block[] = v.blocks.map(b => record(b)).filter(b => typeof b.id === 'string' && (BLOCK_TYPES as readonly string[]).includes(String(b.type))).map(b => ({
     id: String(b.id), type: b.type as BlockType, name: String(b.name ?? ''), body: String(b.body ?? ''), updatedAt: Number(b.updatedAt) || 0,
@@ -257,7 +262,7 @@ export function setupBackend(api: SpindleAPI) {
           const request: GenerationRequestDTO & { provider: string; model: string } = {
             type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
             messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, 'default')), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
-            parameters: { max_tokens: 8000 }, ...(thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking)! } } : {}), signal: controller.signal,
+            parameters: { max_tokens: 16000 }, ...(thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking)! } } : {}), signal: controller.signal,
           };
           let reasoning = '', finish = '';
           try {
@@ -286,9 +291,12 @@ export function setupBackend(api: SpindleAPI) {
           const outcome = upsertBlocks(current.blocks, parsed);
           current.blocks = outcome.sheet;
           const saved = [...outcome.added.map(b => `Added ${b.type.toLowerCase()}: ${b.name}`), ...outcome.replaced.map(b => `Updated ${b.type.toLowerCase()}: ${b.name}`)];
-          current.turns.push({ role: 'assistant', content: written.trim(), at: Date.now(), ...(saved.length ? { saved } : {}) });
+          const lost = unfinishedPiece(written);
+          const why = finish === 'stopped' ? 'stopped' : /length|max_tokens/i.test(finish) ? 'length' : lost ? 'unfinished' : null;
+          const cut = why ? { why, finish: finish || 'none given', ...(lost ? { lost } : {}) } as const : undefined;
+          current.turns.push({ role: 'assistant', content: written.trim(), at: Date.now(), ...(saved.length ? { saved } : {}), ...(cut ? { cut } : {}) });
           await persist();
-          return { session: current, stopped: finish === 'stopped', cutOff: /length|max_tokens/i.test(finish) };
+          return { session: current, stopped: why === 'stopped', cutOff: why === 'length' || why === 'unfinished' };
         } finally {
           clearTimeout(timer);
           state.job = undefined;

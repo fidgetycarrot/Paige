@@ -14,7 +14,11 @@ export interface Settings {
   detected?: { presetId: string; presetName: string; presetUpdatedAt: number; pov: Pov | null; quote: string };
 }
 
-export interface Turn { role: 'user' | 'assistant'; content: string; at: number; /** What this reply put on the Sheet, for the little note under it. */ saved?: string[] }
+export interface Turn {
+  role: 'user' | 'assistant'; content: string; at: number; /** What this reply put on the Sheet, for the little note under it. */ saved?: string[];
+  /** Set when the reply ended before Paige finished: hit the length limit, was stopped, or broke off inside a piece. */
+  cut?: { why: 'length' | 'stopped' | 'unfinished'; finish: string; lost?: string };
+}
 export interface SavedCard { characterId: string; worldBookId: string; personaId?: string; name: string; savedAt: number }
 export interface Session {
   version: 1; id: string; mode: Mode; startedAt: number; turns: Turn[]; blocks: Block[];

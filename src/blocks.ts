@@ -56,6 +56,17 @@ export function listOf(value: string): string[] {
 export interface ParsedBlock { type: BlockType; name: string; body: string }
 
 /** Every labeled code block in a reply, in order. Unlabeled fences (sample lines, anything else) are left alone. */
+/** A piece Paige started but never closed, because the reply ended first. Returns its first line, or null. */
+export function unfinishedPiece(reply: string): string | null {
+  const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
+  const rest = reply.replace(fences, '\n');
+  const open = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*)$/.exec(rest);
+  if (!open) return null;
+  const info = open[3].trim() || (open[4].split('\n').find(l => l.trim()) ?? '').trim();
+  const name = fieldOf(open[4], 'Name');
+  return [info, name].filter(Boolean).join(': ').slice(0, 120) || 'a piece';
+}
+
 export function parseBlocks(reply: string): ParsedBlock[] {
   const found: ParsedBlock[] = [];
   const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
