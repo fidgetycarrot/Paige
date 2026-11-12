@@ -5,8 +5,9 @@ import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } fro
 import { generationError, ModelRequestError } from './errors';
 import { record, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 import { uuid } from './safe-id';
+import { DETECT_SYSTEM, FALLBACK_POV, parseDetection, perspectiveRule, POV_NAMES, POV_SETTINGS, POVS, presetText, type Pov, type PovSetting } from './perspective';
 
-const DEFAULTS: Settings = { connectionId: '', thinking: 'light' };
+const DEFAULTS: Settings = { connectionId: '', thinking: 'light', perspective: 'preset', presetId: '' };
 // A light think keeps Paige quick; off and inherit are the user's choice.
 const REASONING = { light: { source: 'custom', apiReasoning: true, effort: 'low' }, off: { source: 'off' }, inherit: undefined } as const;
 const SESSION = 'session.json', SETTINGS = 'settings.json';
@@ -67,7 +68,13 @@ export function setupBackend(api: SpindleAPI) {
     void (async () => {
       state.load ??= (async () => {
         const saved = record(await api.userStorage.getJson(SETTINGS, { fallback: { ...DEFAULTS }, userId }).catch(() => ({})));
-        state.settings = { connectionId: typeof saved.connectionId === 'string' ? saved.connectionId.slice(0, 100) : '', thinking: THINKING.includes(saved.thinking as Thinking) ? saved.thinking as Thinking : 'light' };
+        const found = record(saved.detected);
+        state.settings = {
+          connectionId: typeof saved.connectionId === 'string' ? saved.connectionId.slice(0, 100) : '', thinking: THINKING.includes(saved.thinking as Thinking) ? saved.thinking as Thinking : 'light',
+          perspective: POV_SETTINGS.includes(saved.perspective as PovSetting) ? saved.perspective as PovSetting : 'preset',
+          presetId: typeof saved.presetId === 'string' ? saved.presetId.slice(0, 100) : '',
+          ...(typeof found.presetId === 'string' ? { detected: { presetId: found.presetId, presetName: String(found.presetName ?? ''), presetUpdatedAt: Number(found.presetUpdatedAt) || 0, pov: POVS.includes(found.pov as Pov) ? found.pov as Pov : null, quote: String(found.quote ?? '').slice(0, 200) } } : {}),
+        };
         const session = await api.userStorage.getJson(SESSION, { fallback: null, userId }).catch(() => null);
         state.session = readSession(session) ?? freshSession('full');
       })();
@@ -83,18 +90,32 @@ export function setupBackend(api: SpindleAPI) {
 
       if (r.action === 'snapshot') {
         const connections = await api.connections.list(userId).catch(() => []);
+        const canPresets = api.permissions.has('presets');
+        const presets = canPresets ? await Promise.resolve().then(() => api.presets.list({ limit: 200, userId })).then(r => r.data.map(p => ({ id: p.id, name: p.name })), () => []) : [];
+        const fallback = connections.find(c => c.is_default)?.preset_id;
         return {
-          settings, session: session(), busy: !!state.job,
+          settings, session: session(), busy: !!state.job, presets,
+          defaultPreset: fallback ? { id: fallback, name: presets.find(p => p.id === fallback)?.name ?? '' } : null,
           connections: connections.map(c => ({ id: c.id, name: c.name, provider: c.provider, model: c.model })),
-          permissions: { generation: api.permissions.has('generation'), characters: api.permissions.has('characters'), world_books: api.permissions.has('world_books'), personas: api.permissions.has('personas'), chats: api.permissions.has('chats'), chat_mutation: api.permissions.has('chat_mutation') },
+          permissions: { generation: api.permissions.has('generation'), characters: api.permissions.has('characters'), world_books: api.permissions.has('world_books'), personas: api.permissions.has('personas'), chats: api.permissions.has('chats'), chat_mutation: api.permissions.has('chat_mutation'), presets: canPresets },
         } satisfies Snapshot;
       }
       if (r.action === 'stop') { state.job?.abort(); return true; }
       if (r.action === 'saveSettings') {
         const connectionId = text(input.connectionId ?? '', 'connection', 100);
         if (connectionId && !await api.connections.get(connectionId, userId)) throw new Error('That connection is gone. Pick another one.');
-        state.settings = { connectionId, thinking: THINKING.includes(input.thinking as Thinking) ? input.thinking as Thinking : settings.thinking };
+        state.settings = {
+          ...settings, connectionId, thinking: THINKING.includes(input.thinking as Thinking) ? input.thinking as Thinking : settings.thinking,
+          perspective: POV_SETTINGS.includes(input.perspective as PovSetting) ? input.perspective as PovSetting : settings.perspective,
+          presetId: typeof input.presetId === 'string' ? text(input.presetId, 'preset', 100) : settings.presetId,
+        };
         await api.userStorage.setJson(SETTINGS, state.settings, { userId });
+        // Read the preset now, so the panel can show what Paige found.
+        if (state.settings.perspective === 'preset' && connectionId) await perspectiveFor(true).catch(() => {});
+        return state.settings;
+      }
+      if (r.action === 'checkPreset') {
+        await perspectiveFor(true);
         return state.settings;
       }
       if (r.action === 'exportSession') {
@@ -235,7 +256,7 @@ export function setupBackend(api: SpindleAPI) {
         try {
           const request: GenerationRequestDTO & { provider: string; model: string } = {
             type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
-            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
+            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, 'default')), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
             parameters: { max_tokens: 8000 }, ...(thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking)! } } : {}), signal: controller.signal,
           };
           let reasoning = '', finish = '';
@@ -347,6 +368,42 @@ export function setupBackend(api: SpindleAPI) {
           return { state: 'failed', message: `LumiCast didn't take them: ${message.replace(/^.*?:\s*(?=[A-Z])/, '').slice(0, 240) || 'no reason given'}` };
         }
       }
+      /**
+       * The first-message perspective rule. With "match my preset", the preset is read by the model once and
+       * remembered until the preset is changed; if it can't be read or doesn't say, third person limited is used.
+       */
+      async function perspectiveFor(force: boolean): Promise<string> {
+        const current = state.settings!;
+        if (current.perspective !== 'preset') return perspectiveRule(current.perspective, 'set in Paige’s settings');
+        if (!api.permissions.has('presets')) return perspectiveRule(FALLBACK_POV, 'default, because Paige can’t read presets');
+        let presetId = current.presetId;
+        if (!presetId) presetId = (await api.connections.list(userId).catch(() => [])).find(c => c.is_default)?.preset_id ?? '';
+        if (!presetId) return perspectiveRule(FALLBACK_POV, 'default, because no main chat preset is picked');
+        const preset = await Promise.resolve().then(() => api.presets.get(presetId, userId)).catch(() => null);
+        if (!preset) return perspectiveRule(FALLBACK_POV, 'default, because the main chat preset is gone');
+        const seen = current.detected;
+        if (force || !seen || seen.presetId !== preset.id || seen.presetUpdatedAt !== preset.updated_at) {
+          const connection = current.connectionId ? await api.connections.get(current.connectionId, userId) : null;
+          if (!connection) return perspectiveRule(FALLBACK_POV, 'default');
+          const blocks = preset.prompt_order?.length ? preset.prompt_order : await api.presets.blocks.list(preset.id, userId).catch(() => []);
+          const body = presetText(blocks);
+          let found: { pov: Pov | null; quote: string } = { pov: null, quote: '' };
+          if (body) {
+            const request: GenerationRequestDTO & { provider: string; model: string } = {
+              type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
+              messages: [{ role: 'system', content: DETECT_SYSTEM }, { role: 'user', content: `Preset "${preset.name}":\n\n${body}` }],
+              parameters: { max_tokens: 2000 }, reasoning: { source: 'off' },
+            };
+            try { const value = record(await api.generate.raw(request)); found = parseDetection(String(value.content ?? '')); }
+            catch (error) { throw generationError(error, connection.provider, connection.model); }
+          }
+          current.detected = { presetId: preset.id, presetName: preset.name, presetUpdatedAt: preset.updated_at, ...found };
+          await api.userStorage.setJson(SETTINGS, current, { userId });
+        }
+        const pov = current.detected!.pov;
+        return pov ? perspectiveRule(pov, `matches the main chat preset "${preset.name}"`) : perspectiveRule(FALLBACK_POV, `default, because "${preset.name}" doesn't say`);
+      }
+
       /** A card and its lorebooks as notebook pieces. */
       async function readCard(card: CardIn): Promise<{ blocks: Block[]; source: CardSource }> {
         const entries: EntryIn[] = [];

@@ -1,6 +1,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
-import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Snapshot } from './contracts';
+import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Settings, Snapshot } from './contracts';
+import { FALLBACK_POV, POV_NAMES, POVS, type PovSetting } from './perspective';
 import { MARKER_WOFF2 } from './font';
 import { uuid } from './safe-id';
 
@@ -205,6 +206,7 @@ const STYLES = `
 .pg-card-pick{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--pg-card);border:1px solid var(--pg-edge);border-left:3px solid var(--pg-margin);border-radius:4px;color:var(--pg-ink);padding:9px 12px;font:inherit;cursor:pointer;line-height:1.35}
 .pg-card-pick:hover{border-color:var(--pg-violet)}
 .pg-confirm{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px 12px}
+.pg-pov-found{flex:1;min-width:200px;align-self:center}
 .pg-pick{border:1px dashed var(--pg-edge);border-radius:8px;padding:4px 14px 12px;margin:12px 0}
 .pg-cast{margin-top:14px;border-left:3px solid var(--pg-violet);padding:4px 0 4px 14px;line-height:1.45}
 .pg-cast-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -601,10 +603,42 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     el('p', 'Paige and her interview are by Deiomo (deiomo.github.io), used with permission.', 'pg-note pg-credit'),
   );
   settingsScroll.children[2].append(saveSettings);
+  // First message perspective: match the main chat preset, or a fixed choice.
+  const pov = el('select');
+  { const o = el('option', 'Match my main chat preset'); o.value = 'preset'; pov.append(o); }
+  for (const p of POVS) { const o = el('option', POV_NAMES[p][0].toUpperCase() + POV_NAMES[p].slice(1)); o.value = p; pov.append(o); }
+  const presetPick = el('select');
+  const povFound = el('div', '', 'pg-note pg-pov-found');
+  const checkAgain = el('button', 'Read it again', 'pg-btn'); checkAgain.type = 'button';
+  const presetField = field('Main chat preset', presetPick, 'The preset you play with. Paige reads it once to see how it writes, and again only when it changes.');
+  const povRow = el('div', undefined, 'pg-row'); povRow.append(povFound, checkAgain);
+  settingsScroll.children[2].before(field('First messages are written in', pov, 'How Paige narrates the first messages she writes. Third person from the outside never shows the main character’s private thoughts.'), presetField, povRow);
+  const showPov = () => {
+    const matching = pov.value === 'preset';
+    presetField.hidden = !matching; povRow.hidden = !matching;
+    if (!matching || !snapshot) return;
+    if (!snapshot.permissions.presets) { povFound.textContent = `Grant Paige the presets permission in Extensions so she can read your preset. Until then she writes ${POV_NAMES[FALLBACK_POV]}.`; checkAgain.hidden = true; return; }
+    checkAgain.hidden = false;
+    const want = presetPick.value || snapshot.defaultPreset?.id || '';
+    const seen = snapshot.settings.detected;
+    if (!want) povFound.textContent = `No preset picked, and your default connection has none. Paige writes ${POV_NAMES[FALLBACK_POV]}.`;
+    else if (!seen || seen.presetId !== want) povFound.textContent = 'Paige reads this preset when you save.';
+    else povFound.textContent = seen.pov ? `“${seen.presetName}” writes in ${POV_NAMES[seen.pov]}.${seen.quote ? ` It says: “${seen.quote}”` : ''}` : `“${seen.presetName}” doesn’t say, so Paige writes ${POV_NAMES[FALLBACK_POV]}.`;
+  };
+  pov.addEventListener('change', showPov); presetPick.addEventListener('change', showPov);
+  checkAgain.addEventListener('click', () => void act(async () => {
+    povFound.textContent = 'Reading your preset…';
+    const saved = await rpc.request<Settings>('checkPreset');
+    if (snapshot) snapshot.settings = saved;
+    showPov();
+  }));
   settingsScroll.querySelector('.pg-backup')!.append(saveBackup, loadBackup);
   views.settings.append(settingsScroll);
   saveSettings.addEventListener('click', () => void act(async () => {
-    await rpc.request('saveSettings', { connectionId: connection.value, thinking: thinking.value });
+    if (pov.value === 'preset') povFound.textContent = 'Reading your preset…';
+    const saved = await rpc.request<Settings>('saveSettings', { connectionId: connection.value, thinking: thinking.value, perspective: pov.value, presetId: presetPick.value });
+    if (snapshot) snapshot.settings = saved;
+    showPov();
     settingsNotify('Saved.');
   }));
 
@@ -908,13 +942,17 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     (connection.firstChild as HTMLOptionElement).value = '';
     for (const c of snapshot.connections) { const o = el('option', `${c.name} · ${c.model}`); o.value = c.id; connection.append(o); }
     connection.value = snapshot.settings.connectionId; thinking.value = snapshot.settings.thinking;
+    presetPick.replaceChildren(el('option', snapshot.defaultPreset ? `${snapshot.defaultPreset.name || 'Unnamed'} (on my default connection)` : 'The one on my default connection'));
+    (presetPick.firstChild as HTMLOptionElement).value = '';
+    for (const p of snapshot.presets) { const o = el('option', p.name); o.value = p.id; presetPick.append(o); }
+    pov.value = snapshot.settings.perspective as PovSetting; presetPick.value = snapshot.settings.presetId;
+    showPov();
     renderLog(true); renderSheet(); update();
     // Only what Paige can't work without. Personas, chats and chat_mutation are only needed for one feature each, and that feature says so when it's used.
     const missing = (['generation', 'characters', 'world_books'] as const).filter(p => !snapshot!.permissions[p]).map(p => p.replace('_', ' '));
     if (!snapshot.settings.connectionId) { show('settings'); settingsNotify('Pick the model connection Paige should use, then save.'); }
     if (missing.length) notify(`Paige needs these permissions in Extensions: ${missing.join(', ')}.`, true);
   }
-  saveSettings.addEventListener('click', () => { if (snapshot) snapshot.settings = { connectionId: connection.value, thinking: thinking.value as Snapshot['settings']['thinking'] }; });
 
   let start: keyof typeof views = 'chat';
   try { const saved = localStorage.getItem('paige.tab'); if (saved === 'sheet' || saved === 'settings') start = saved; } catch { /* default */ }

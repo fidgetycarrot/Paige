@@ -11,6 +11,12 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
   let seq = 0; const nid = (p: string) => `${p}${++seq}`;
   const chats: { id: string; character_id: string; name: string; updated_at: number }[] = [];
   const requests: unknown[] = [];
+  const presets = new Map<string, { id: string; name: string; updated_at: number; prompt_order: { name: string; content: string; enabled: boolean; marker: string | null }[] }>();
+  presets.set('p1', { id: 'p1', name: 'My preset', updated_at: 1, prompt_order: [
+    { name: 'Style', content: 'Write in third person. Never reveal {{char}}’s thoughts.', enabled: true, marker: null },
+    { name: 'Off', content: 'Write in first person.', enabled: false, marker: null },
+  ] });
+  const raws: { messages: { content: string }[] }[] = [];
   const api = {
     permissions: { has: (p: string) => !denied.includes(p) },
     onFrontendMessage: (fn: typeof listener) => { listener = fn; return () => {}; },
@@ -19,9 +25,14 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
       getJson: async (path: string, o: { fallback: unknown }) => store.has(path) ? structuredClone(store.get(path)) : o.fallback,
       setJson: async (path: string, value: unknown) => { store.set(path, structuredClone(value)); },
     },
-    connections: { list: async () => [{ id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek' }], get: async (id: string) => id === 'c1' ? { id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek' } : null },
+    presets: {
+      list: async () => ({ data: [...presets.values()], total: presets.size }),
+      get: async (id: string) => presets.get(id) ?? null,
+      blocks: { list: async () => [] },
+    },
+    connections: { list: async () => [{ id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek', is_default: true, preset_id: 'p1' }], get: async (id: string) => id === 'c1' ? { id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek' } : null },
     generate: {
-      raw: async () => ({}),
+      raw: async (request: { messages: { content: string }[] }) => { raws.push(request); return { content: '{"pov": "3rd-limited", "quote": "Never reveal {{char}}’s thoughts"}' }; },
       rawStream: async function* (request: unknown) {
         requests.push(request);
         const text = replies.shift() ?? 'ok';
@@ -73,7 +84,7 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
     }
     throw new Error('no reply');
   };
-  return { call, store, sent, characters, entries, personas, pool, requests, chats, books };
+  return { call, store, sent, characters, entries, personas, pool, requests, chats, books, presets, raws };
 }
 
 describe('Paige backend', () => {
@@ -116,6 +127,45 @@ describe('Paige backend', () => {
     expect([...host.characters.values()][0].name).toBe('Port Hesk');
     expect([...host.entries.values()].map(e => e.content)).toEqual(['[Side character]\nName: Mara\n## Look\nShaved head now.']);
     expect(host.personas.size).toBe(1);
+  });
+
+  test('first messages match the main chat preset, read once until it changes', async () => {
+    const host = fakeHost(['Hi.', 'Again.', 'Once more.', 'Fixed.']);
+    const snap = await host.call<{ presets: { id: string }[]; defaultPreset: { name: string } }>('snapshot');
+    expect(snap.presets.map(p => p.id)).toEqual(['p1']);
+    expect(snap.defaultPreset.name).toBe('My preset');
+    const saved = await host.call<{ perspective: string; detected: { pov: string; presetName: string } }>('saveSettings', { connectionId: 'c1', thinking: 'off' });
+    expect(saved.perspective).toBe('preset');
+    expect(saved.detected).toMatchObject({ pov: '3rd-limited', presetName: 'My preset' });
+    expect(host.raws).toHaveLength(1);
+    // Only enabled blocks went to the reader.
+    expect(host.raws[0].messages[1].content).toContain('third person');
+    expect(host.raws[0].messages[1].content).not.toContain('first person');
+    await host.call('send', { text: 'hi' });
+    await host.call('send', { text: 'again' });
+    expect(host.raws).toHaveLength(1);
+    const rules = (host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content;
+    expect(rules).toContain('First message perspective (matches the main chat preset "My preset"): Third person, limited');
+    // The preset changed, so it's read again.
+    host.presets.get('p1')!.updated_at = 2;
+    await host.call('send', { text: 'once more' });
+    expect(host.raws).toHaveLength(2);
+    // A fixed choice doesn't read the preset at all.
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'off', perspective: '1st', presetId: '' });
+    await host.call('send', { text: 'fixed' });
+    expect(host.raws).toHaveLength(2);
+    expect((host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content).toContain('(set in Paige’s settings): First person');
+  });
+
+  test('without the presets permission, Paige writes third person from the outside', async () => {
+    const host = fakeHost(['Hi.'], true, ['presets']);
+    const snap = await host.call<{ presets: unknown[]; permissions: { presets: boolean } }>('snapshot');
+    expect(snap.permissions.presets).toBe(false);
+    expect(snap.presets).toEqual([]);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'off' });
+    await host.call('send', { text: 'hi' });
+    expect(host.raws).toHaveLength(0);
+    expect((host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content).toContain('can’t read presets): Third person, limited');
   });
 
   test('retry takes back the last reply and what it saved', async () => {

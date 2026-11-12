@@ -1,7 +1,7 @@
 {
   "name": "Paige",
   "identifier": "paige",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "author": "fidgetycarrot",
   "github": "https://github.com/fidgetycarrot/Paige",
   "homepage": "https://github.com/fidgetycarrot/Paige#readme",
@@ -11,6 +11,7 @@
     "characters",
     "world_books",
     "personas",
+    "presets",
     "chats",
     "chat_mutation"
   ],

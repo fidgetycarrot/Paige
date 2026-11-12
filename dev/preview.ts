@@ -53,8 +53,14 @@ const api = {
     getJson: async (path: string, o: { fallback: unknown }) => store.has(path) ? structuredClone(store.get(path)) : o.fallback,
     setJson: async (path: string, value: unknown) => { store.set(path, structuredClone(value)); },
   },
-  connections: { list: async () => [{ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro' }], get: async () => ({ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro' }) },
+  presets: {
+    list: async () => ({ data: [{ id: 'p1', name: 'Marinara' }, { id: 'p2', name: 'Celia 4.1' }], total: 2 }),
+    get: async (id: string) => ({ id, name: id === 'p1' ? 'Marinara' : 'Celia 4.1', updated_at: 1, prompt_order: [{ name: 'Style', content: 'Third person limited. Never reveal {{char}}’s inner thoughts.', enabled: true, marker: null }] }),
+    blocks: { list: async () => [] },
+  },
+  connections: { list: async () => [{ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro', is_default: true, preset_id: 'p1' }], get: async () => ({ id: 'c1', name: 'DeepSeek', provider: 'openrouter', model: 'deepseek-v4-pro' }) },
   generate: {
+    raw: async () => { await new Promise(r => setTimeout(r, 300)); return { content: '{"pov": "3rd-limited", "quote": "Third person limited. Never reveal {{char}}’s inner thoughts."}' }; },
     rawStream: async function* () {
       const text = replies.shift() ?? '"Got it."';
       for (const part of text.match(/[\s\S]{1,30}/g)!) { await new Promise(r => setTimeout(r, 5)); yield { type: 'token', token: part }; }

@@ -1,9 +1,18 @@
 import type { Block, Mode } from './blocks';
 import type { CardSource } from './fix';
+import type { Pov, PovSetting } from './perspective';
 
 export type Thinking = 'light' | 'off' | 'inherit';
 export const THINKING: Thinking[] = ['light', 'off', 'inherit'];
-export interface Settings { connectionId: string; thinking: Thinking }
+export interface Settings {
+  connectionId: string; thinking: Thinking;
+  /** How first messages are written; 'preset' reads it from the main chat preset. */
+  perspective: PovSetting;
+  /** The main chat preset; empty means the one on the default connection. */
+  presetId: string;
+  /** What Paige last read from that preset, so it's only read again when the preset changes. */
+  detected?: { presetId: string; presetName: string; presetUpdatedAt: number; pov: Pov | null; quote: string };
+}
 
 export interface Turn { role: 'user' | 'assistant'; content: string; at: number; /** What this reply put on the Sheet, for the little note under it. */ saved?: string[] }
 export interface SavedCard { characterId: string; worldBookId: string; personaId?: string; name: string; savedAt: number }
@@ -22,7 +31,10 @@ export interface ChatListItem { id: string; name: string; updatedAt: number }
 export interface Snapshot {
   settings: Settings; session: Session; busy: boolean;
   connections: { id: string; name: string; provider: string; model: string }[];
-  permissions: Record<'generation' | 'characters' | 'world_books' | 'personas' | 'chats' | 'chat_mutation', boolean>;
+  permissions: Record<'generation' | 'characters' | 'world_books' | 'personas' | 'chats' | 'chat_mutation' | 'presets', boolean>;
+  presets: { id: string; name: string }[];
+  /** The preset on the default connection, if any. */
+  defaultPreset: { id: string; name: string } | null;
 }
 export interface CastStatus { state: 'started' | 'skipped' | 'failed'; message: string }
 export interface CardResult { copy?: boolean; changes?: string[]; updated: boolean; name: string; entries: number; greetings: number; personaName: string; personaNote: string; notes: string[]; cast: CastStatus | null; session: Session }

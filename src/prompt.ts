@@ -55,7 +55,7 @@ const MODE_NOTES: Record<Mode, string> = {
 - NSFW sections follow the NSFW setting as usual. {{user}} can switch back to the full interview on the panel.`,
 };
 
-export function appNotes(mode: Mode): string {
+export function appNotes(mode: Mode, perspective?: string): string {
   return `### App notes (Paige is running inside the Paige extension)
 - Every finished piece gets taped into {{user}}'s notebook (the Notebook tab on their panel) the moment you output its code block. When you or {{user}} say "the sheet", that's this notebook. Never ask {{user}} to copy or paste anything.
 - The notebook below is the saved version of every piece. If {{user}} edited a piece there, their version wins. Use it to keep names consistent even after older messages are gone.
@@ -186,7 +186,7 @@ export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 /** Older turns are dropped first; the Sheet keeps every finished piece, so nothing built is lost. */
 export const HISTORY_BUDGET = 120_000;
 
-export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string }): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string; perspective?: string }): { role: 'system' | 'user' | 'assistant'; content: string }[] {
   const kept: ChatTurn[] = [];
   let used = 0;
   for (let i = input.turns.length - 1; i >= 0; i--) {
@@ -195,7 +195,7 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), appNotes(input.mode), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
+  const system = [paigeRules(), appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
   if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.

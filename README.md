@@ -8,7 +8,7 @@ Paige, her personality and her whole interview are by **Deiomo** ([deiomo.github
 
 In Lumiverse, open Extensions and install from GitHub: `https://github.com/fidgetycarrot/Paige`
 
-Give it these permissions: generation, characters, world_books, personas. For **Let Paige read the roleplay** (optional), also chats and chat_mutation; Paige only reads chats with them, never changes one.
+Give it these permissions: generation, characters, world_books, personas, presets. For **Let Paige read the roleplay** (optional), also chats and chat_mutation; Paige only reads chats with them, never changes one.
 
 ## Use
 
@@ -27,6 +27,8 @@ Give it these permissions: generation, characters, world_books, personas. For **
 **Full screen** (top right, on a Mac or other big screen) opens Paige over the whole window. Pick **Side by side** (chat on the left, notebook on the right) or **One wide chat**. **Back to the side panel** or Esc puts her back. She remembers both choices.
 
 **Save a backup** in Settings downloads the whole chat and notebook as a file. **Load a backup** brings one back, and also takes Paige's own `session.json` from her storage folder. Whatever was open is kept in Paige's storage.
+
+**First messages are written in** (Settings) picks the perspective for the first messages Paige writes. By default it matches your main chat preset: Paige reads that preset once to see how it writes (plain "third person" counts as from the outside), and again only when the preset changes. If the preset doesn't say, or the presets permission isn't given, she writes third person from the outside, never showing the main character's private thoughts. You can also pick a perspective yourself.
 
 **Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again. **Start over** in Settings clears the chat and notebook for a new card; the old chat is kept in Paige's storage.
 
@@ -48,7 +50,7 @@ Tick "Also send everyone's looks to LumiCast" before Make my card. Paige sends e
 Only what running inside an extension needed:
 
 - Finished pieces go into the notebook instead of being copied by hand, and the hand-off tells you to check it.
-- No blank preset, empty persona or summarizer workaround; Paige has her own prompt and ignores your preset.
+- No blank preset, empty persona or summarizer workaround; Paige has her own prompt and ignores your preset (except to match its perspective in first messages).
 - First messages and the new optional persona step come out as pieces the app can pick up.
 - The pointer to the single-character version of Paige is gone from her greeting.
 - The quoted song lyric in her sign-off is now a short reference to it.
