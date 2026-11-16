@@ -12,12 +12,18 @@ export interface Settings {
   presetId: string;
   /** What Paige last read from that preset, so it's only read again when the preset changes. */
   detected?: { presetId: string; presetName: string; presetUpdatedAt: number; pov: Pov | null; quote: string };
+  /** What Paige knows about the user's tastes. They wrote it or approved every line. */
+  aboutMe: string;
 }
+/** Room in the about-me note, so it stays a short list of tastes. */
+export const ABOUT_MAX = 1500;
 
 export interface Turn {
   role: 'user' | 'assistant'; content: string; at: number; /** What this reply put on the Sheet, for the little note under it. */ saved?: string[];
   /** Set when the reply ended before Paige finished: hit the length limit, was stopped, or broke off inside a piece. */
   cut?: { why: 'length' | 'stopped' | 'unfinished'; finish: string; lost?: string };
+  /** Lines Paige suggested adding to the about-me note, and what the user chose. */
+  remember?: { text: string; state: 'open' | 'added' | 'skipped' }[];
 }
 export interface SavedCard { characterId: string; worldBookId: string; personaId?: string; name: string; savedAt: number }
 export interface Session {

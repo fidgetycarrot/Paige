@@ -129,6 +129,24 @@ function listOf(value) {
   const seen = new Set;
   return value.split(/[,;\/]/).map((v) => v.replace(/^["'\u201C\u201D]+|["'\u201C\u201D.]+$/g, "").trim()).filter((v) => v && !/^(?:none|n\/a|-)$/i.test(v) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
 }
+var REMEMBER = /^[ \t]*[*_#]*[ \t]*remember[ \t]*[*_:]*[ \t]*$/i;
+function isRemember(info, body) {
+  return REMEMBER.test(info) || !info.trim() && REMEMBER.test(body.split(`
+`).find((l) => l.trim()) ?? "");
+}
+function rememberLines(reply) {
+  const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
+  const lines = [];
+  for (const m of reply.matchAll(fences)) {
+    if (!isRemember(m[3], m[4]))
+      continue;
+    const body = m[3].trim() ? m[4] : m[4].replace(/^\s*[^\n]*\n?/, "");
+    const line = body.replace(/\s+/g, " ").replace(/^[-*\u2022]\s*/, "").trim();
+    if (line)
+      lines.push(line.slice(0, 240));
+  }
+  return lines;
+}
 function unfinishedPiece(reply) {
   const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
   const rest = reply.replace(fences, `
@@ -674,6 +692,27 @@ function exampleText() {
 ${CARD.mes_example.replaceAll("{{char}}", "Paige")}`;
 }
 var HISTORY_BUDGET = 120000;
+function aboutMeText(note) {
+  const rules = `- Suggesting something to remember: when {{user}} tells you or clearly shows a lasting taste in how they like their cards or how they play (genres, kinks, tone, pacing, how big a cast, how much they steer), and it isn't already in the note below, you may suggest one short line for their note. Put it in its own piece, outside the notebook:
+\`\`\`
+Remember
+One short line about the taste, in plain words.
+\`\`\`
+Only tastes that will still be true for their next card. Never details of this card: no names, places, plots or characters. At most one per reply, and only when it's real; most replies have none. {{user}} picks Add or No thanks; don't mention it again either way.`;
+  if (!note.trim())
+    return `## What you know about {{user}}
+Nothing yet.
+${rules}`;
+  return `## What you know about {{user}}
+{{user}} wrote this note or approved every line of it:
+<about_user>
+${note.trim()}
+</about_user>
+- Use it as where to start, not a fence. Don't ask questions it already answers; still ask about everything that's particular to this card.
+- Don't make every card the same because of it. Find fresh ideas within those tastes, and don't repeat ideas from earlier cards. If {{user}} asks for something different this time, set the note aside.
+- Don't bring the note up or quote it; just let it shape your suggestions.
+${rules}`;
+}
 function buildMessages(input) {
   const kept = [];
   let used = 0;
@@ -684,7 +723,7 @@ function buildMessages(input) {
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), appNotes(input.mode), ...input.perspective ? [input.perspective] : [], ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
+  const system = [paigeRules(), appNotes(input.mode), ...input.perspective ? [input.perspective] : [], aboutMeText(input.aboutMe ?? ""), ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
 
 `);
   const messages = [{ role: "system", content: system }];
@@ -849,6 +888,7 @@ ${PLAYER_RULE}` } : null;
 
 // src/contracts.ts
 var THINKING = ["light", "off", "inherit"];
+var ABOUT_MAX = 1500;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 function text(v, label, max) {
   if (typeof v !== "string" || v.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))
@@ -956,7 +996,16 @@ function parseDetection(reply) {
 }
 
 // src/backend.ts
-var DEFAULTS = { connectionId: "", thinking: "light", perspective: "preset", presetId: "" };
+var DEFAULTS = { connectionId: "", thinking: "light", perspective: "preset", presetId: "", aboutMe: "" };
+var aboutMeIn = (v) => {
+  const note = v.replace(/\r/g, "").replace(/\n{3,}/g, `
+
+`).trim();
+  if (note.length > ABOUT_MAX)
+    throw new Error(`The note is too long. Keep it under ${ABOUT_MAX} characters.`);
+  return text(note, "note", ABOUT_MAX);
+};
+var sameLine = (a, b) => a.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === b.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 var REASONING = { light: { source: "custom", apiReasoning: true, effort: "low" }, off: { source: "off" }, inherit: undefined };
 var SESSION = "session.json";
 var SETTINGS = "settings.json";
@@ -975,9 +1024,15 @@ function readSession(value) {
       return {};
     return { cut: { why: c.why, finish: String(c.finish ?? "").slice(0, 60), ...typeof c.lost === "string" ? { lost: c.lost.slice(0, 120) } : {} } };
   };
+  const rememberOf = (v) => {
+    if (!Array.isArray(v))
+      return {};
+    const list = v.map(record).filter((x) => typeof x.text === "string" && x.text).slice(0, 3).map((x) => ({ text: String(x.text).slice(0, 240), state: ["open", "added", "skipped"].includes(String(x.state)) ? x.state : "open" }));
+    return list.length ? { remember: list } : {};
+  };
   const turns = v.turns.filter((t) => record(t).role === "user" || record(t).role === "assistant").map((t) => {
     const r = record(t);
-    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut) };
+    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut), ...rememberOf(r.remember) };
   });
   const blocks = v.blocks.map((b) => record(b)).filter((b) => typeof b.id === "string" && BLOCK_TYPES.includes(String(b.type))).map((b) => ({
     id: String(b.id),
@@ -1047,6 +1102,7 @@ function setupBackend(api) {
           thinking: THINKING.includes(saved.thinking) ? saved.thinking : "light",
           perspective: POV_SETTINGS.includes(saved.perspective) ? saved.perspective : "preset",
           presetId: typeof saved.presetId === "string" ? saved.presetId.slice(0, 100) : "",
+          aboutMe: typeof saved.aboutMe === "string" ? saved.aboutMe.slice(0, ABOUT_MAX) : "",
           ...typeof found.presetId === "string" ? { detected: { presetId: found.presetId, presetName: String(found.presetName ?? ""), presetUpdatedAt: Number(found.presetUpdatedAt) || 0, pov: POVS.includes(found.pov) ? found.pov : null, quote: String(found.quote ?? "").slice(0, 200) } } : {}
         };
         const session = await api.userStorage.getJson(SESSION, { fallback: null, userId }).catch(() => null);
@@ -1089,12 +1145,34 @@ function setupBackend(api) {
           connectionId,
           thinking: THINKING.includes(input.thinking) ? input.thinking : settings.thinking,
           perspective: POV_SETTINGS.includes(input.perspective) ? input.perspective : settings.perspective,
-          presetId: typeof input.presetId === "string" ? text(input.presetId, "preset", 100) : settings.presetId
+          presetId: typeof input.presetId === "string" ? text(input.presetId, "preset", 100) : settings.presetId,
+          aboutMe: typeof input.aboutMe === "string" ? aboutMeIn(input.aboutMe) : settings.aboutMe
         };
         await api.userStorage.setJson(SETTINGS, state.settings, { userId });
         if (state.settings.perspective === "preset" && connectionId)
           await perspectiveFor(true).catch(() => {});
         return state.settings;
+      }
+      if (r.action === "remember") {
+        const session = state.session;
+        const turn = session.turns.find((t) => t.at === Number(input.at) && t.role === "assistant");
+        const line = turn?.remember?.[Number(input.index)];
+        if (!turn || !line)
+          throw new Error("That suggestion is gone.");
+        if (line.state === "open") {
+          if (input.add === true) {
+            const next = settings.aboutMe.trim() ? `${settings.aboutMe.trim()}
+- ${line.text}` : `- ${line.text}`;
+            if (next.length > ABOUT_MAX)
+              throw new Error("Your note is full. Make room in Settings first.");
+            state.settings = { ...settings, aboutMe: next };
+            await api.userStorage.setJson(SETTINGS, state.settings, { userId });
+          }
+          line.state = input.add === true ? "added" : "skipped";
+          await persist();
+          broadcast();
+        }
+        return { settings: state.settings, session };
       }
       if (r.action === "checkPreset") {
         await perspectiveFor(true);
@@ -1282,7 +1360,7 @@ function setupBackend(api) {
             provider: connection.provider,
             model: connection.model,
             userId,
-            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, "default")), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined }),
+            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, "default")), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined, aboutMe: settings.aboutMe }),
             parameters: { max_tokens: 16000 },
             ...thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking) } } : {},
             signal: controller.signal
@@ -1330,7 +1408,10 @@ function setupBackend(api) {
           const lost = unfinishedPiece(written);
           const why = finish === "stopped" ? "stopped" : /length|max_tokens/i.test(finish) ? "length" : lost ? "unfinished" : null;
           const cut = why ? { why, finish: finish || "none given", ...lost ? { lost } : {} } : undefined;
-          current.turns.push({ role: "assistant", content: written.trim(), at: Date.now(), ...saved.length ? { saved } : {}, ...cut ? { cut } : {} });
+          const known = state.settings.aboutMe.split(`
+`).map((l) => l.replace(/^[-*\u2022]\s*/, ""));
+          const remember = rememberLines(written).filter((l) => !known.some((k) => sameLine(k, l))).slice(0, 1).map((text) => ({ text, state: "open" }));
+          current.turns.push({ role: "assistant", content: written.trim(), at: Date.now(), ...saved.length ? { saved } : {}, ...cut ? { cut } : {}, ...remember.length ? { remember } : {} });
           await persist();
           return { session: current, stopped: why === "stopped", cutOff: why === "length" || why === "unfinished" };
         } finally {

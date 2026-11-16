@@ -180,6 +180,26 @@ describe('Paige backend', () => {
     expect(snap.session.turns.at(-1)!.cut?.why).toBe('unfinished');
   });
 
+  test('Paige suggests a taste to remember, and it is added only when accepted', async () => {
+    const host = fakeHost(['Noted.\n```\nRemember\nWants the world to bring hooks to them.\n```', 'Again.\n```\nRemember\nWants the world to bring hooks to them\n```', 'Fine.\n```\nRemember\nLikes big casts.\n```', 'Ok.'], true, ['presets']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'off', aboutMe: '- Likes slow burn' });
+    const first = await host.call<{ session: { blocks: unknown[]; turns: { at: number; remember?: { text: string; state: string }[] }[] } }>('send', { text: 'I never steer' });
+    const turn = first.session.turns.at(-1)!;
+    expect(first.session.blocks).toEqual([]);
+    expect(turn.remember).toEqual([{ text: 'Wants the world to bring hooks to them.', state: 'open' }]);
+    const added = await host.call<{ settings: { aboutMe: string } }>('remember', { at: turn.at, index: 0, add: true });
+    expect(added.settings.aboutMe).toBe('- Likes slow burn\n- Wants the world to bring hooks to them.');
+    // The same taste again isn't suggested twice.
+    const second = await host.call<{ session: { turns: { remember?: unknown[] }[] } }>('send', { text: 'again' });
+    expect(second.session.turns.at(-1)!.remember).toBeUndefined();
+    const third = await host.call<{ session: { turns: { at: number }[] } }>('send', { text: 'big cast' });
+    const skipped = await host.call<{ settings: { aboutMe: string }; session: { turns: { remember?: { state: string }[] }[] } }>('remember', { at: third.session.turns.at(-1)!.at, index: 0, add: false });
+    expect(skipped.settings.aboutMe).not.toContain('big casts');
+    expect(skipped.session.turns.at(-1)!.remember![0].state).toBe('skipped');
+    await host.call('send', { text: 'ok' });
+    expect((host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content).toContain('<about_user>\n- Likes slow burn\n- Wants the world to bring hooks to them.\n</about_user>');
+  });
+
   test('retry takes back the last reply and what it saved', async () => {
     const host = fakeHost(['```\nSide character\nName: Ash\n```', 'Plain reply, nothing saved.']);
     await host.call('saveSettings', { connectionId: 'c1', thinking: 'light' });

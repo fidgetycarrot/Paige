@@ -32,7 +32,11 @@ Give it these permissions: generation, characters, world_books, personas, preset
 
 If a reply ends before Paige finishes (it hits the length limit, or breaks off in the middle of a piece), a note under it says so and what didn't make it in, with **Ask her to finish**. The notebook also lists what isn't on the card yet, so you know when it's safe to play.
 
-**Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again. **Start over** in Settings clears the chat and notebook for a new card; the old chat is kept in Paige's storage.
+**What Paige knows about you** (Settings) is a short note of your tastes, one per line. Paige starts every card from it, so she asks less about things she already knows. When she learns a lasting taste, she suggests a line under her reply with **Add** and **No thanks**; nothing is added without your yes. She's told to keep card details out of it and not to make every card alike.
+
+**Start over** is at the top of the panel. Press it twice to clear the chat and notebook; the old chat stays in Paige's storage, and cards you made stay in Lumiverse.
+
+**Retry** takes back Paige's last reply (and anything it put in the notebook) and asks again.
 
 ## Fixing a card you've played
 

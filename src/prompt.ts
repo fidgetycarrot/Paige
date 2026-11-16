@@ -186,7 +186,29 @@ export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 /** Older turns are dropped first; the Sheet keeps every finished piece, so nothing built is lost. */
 export const HISTORY_BUDGET = 120_000;
 
-export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string; perspective?: string }): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+/** The about-me note, and how to suggest adding to it. */
+export function aboutMeText(note: string): string {
+  const rules = `- Suggesting something to remember: when {{user}} tells you or clearly shows a lasting taste in how they like their cards or how they play (genres, kinks, tone, pacing, how big a cast, how much they steer), and it isn't already in the note below, you may suggest one short line for their note. Put it in its own piece, outside the notebook:
+\`\`\`
+Remember
+One short line about the taste, in plain words.
+\`\`\`
+Only tastes that will still be true for their next card. Never details of this card: no names, places, plots or characters. At most one per reply, and only when it's real; most replies have none. {{user}} picks Add or No thanks; don't mention it again either way.`;
+  if (!note.trim()) return `## What you know about {{user}}
+Nothing yet.
+${rules}`;
+  return `## What you know about {{user}}
+{{user}} wrote this note or approved every line of it:
+<about_user>
+${note.trim()}
+</about_user>
+- Use it as where to start, not a fence. Don't ask questions it already answers; still ask about everything that's particular to this card.
+- Don't make every card the same because of it. Find fresh ideas within those tastes, and don't repeat ideas from earlier cards. If {{user}} asks for something different this time, set the note aside.
+- Don't bring the note up or quote it; just let it shape your suggestions.
+${rules}`;
+}
+
+export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string; perspective?: string; aboutMe?: string }): { role: 'system' | 'user' | 'assistant'; content: string }[] {
   const kept: ChatTurn[] = [];
   let used = 0;
   for (let i = input.turns.length - 1; i >= 0; i--) {
@@ -195,7 +217,7 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
+  const system = [paigeRules(), appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), aboutMeText(input.aboutMe ?? ''), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
   if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.

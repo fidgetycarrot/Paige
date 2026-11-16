@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { labelOf, looksFrom, parseBlocks, planCard, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
-import { appNotes, buildMessages, greeting, paigeRules } from '../src/prompt';
+import { labelOf, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
+import { aboutMeText, appNotes, buildMessages, greeting, paigeRules } from '../src/prompt';
 
 const reply = `*She slides the clipboard over.* "Done. Here's Mara."
 
@@ -208,5 +208,20 @@ describe('cut-off replies', () => {
     expect(unfinishedPiece('```Lore\nName: The Vaults\nDeep')).toBe('Lore: The Vaults');
     expect(unfinishedPiece('```\nScenario\nDone.\n```\nAll set.')).toBeNull();
     expect(unfinishedPiece('No pieces at all.')).toBeNull();
+  });
+});
+
+describe('remembering tastes', () => {
+  test('Remember pieces are suggestions, not notebook pieces', () => {
+    const reply = 'Got it.\n```\nRemember\nLikes big casts and road trips.\n```\n```Remember\n- Plays passively\n```';
+    expect(rememberLines(reply)).toEqual(['Likes big casts and road trips.', 'Plays passively']);
+    expect(parseBlocks(reply)).toEqual([]);
+  });
+  test('the note goes in the prompt with rules against sameness', () => {
+    const text = aboutMeText('- Likes femboys');
+    expect(text).toContain('<about_user>\n- Likes femboys\n</about_user>');
+    expect(text).toContain('Don’t make every card the same'.replace('’', "'"));
+    expect(aboutMeText('')).toContain('Nothing yet.');
+    expect(buildMessages({ mode: 'full', blocks: [], turns: [], aboutMe: '- Likes slow burn' })[0].content).toContain('- Likes slow burn');
   });
 });

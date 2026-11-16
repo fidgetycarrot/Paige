@@ -128,6 +128,11 @@ function listOf(value) {
   const seen = new Set;
   return value.split(/[,;\/]/).map((v) => v.replace(/^["'“”]+|["'“”.]+$/g, "").trim()).filter((v) => v && !/^(?:none|n\/a|-)$/i.test(v) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
 }
+var REMEMBER = /^[ \t]*[*_#]*[ \t]*remember[ \t]*[*_:]*[ \t]*$/i;
+function isRemember(info, body) {
+  return REMEMBER.test(info) || !info.trim() && REMEMBER.test(body.split(`
+`).find((l) => l.trim()) ?? "");
+}
 function withoutAddedName(block) {
   const body = block.body.trim();
   const had = block.origin !== undefined && nameLine.test(block.origin.split(`
@@ -177,6 +182,9 @@ ${parts.join(`
   }
   return looks;
 }
+
+// src/contracts.ts
+var ABOUT_MAX = 1500;
 
 // src/perspective.ts
 var POVS = ["3rd-limited", "3rd-close", "2nd", "1st"];
@@ -372,6 +380,8 @@ function message(target, text, live = false) {
     at = m.index + m[0].length;
     const info = m[3].trim();
     let body = m[4];
+    if (isRemember(m[3], m[4]))
+      continue;
     let type = info ? labelOf(info) : null;
     if (!type) {
       const lines = body.split(`
@@ -396,6 +406,12 @@ var STYLES = `
 .pg-title{font:400 34px/1 var(--pg-hand);color:var(--pg-violet);margin:0;position:relative;padding-top:8px;transform:rotate(-2deg);transform-origin:left center}
 .pg-crown{position:absolute;left:-4px;top:-6px;width:22px;height:16px;transform:rotate(-14deg)}
 .pg-sub{color:var(--pg-pencil);font-size:13px;line-height:1.4;margin:0}
+/* The tagline only has room in full screen. */
+.pg-app:not(.pg-full) .pg-sub{display:none}
+.pg-top .pg-full-btn{white-space:nowrap}
+.pg-app:not(.pg-full) .pg-full-btn:not(.pg-bring):not(.pg-new) span{display:none}
+.pg-top{flex-wrap:wrap;row-gap:8px}
+.pg-app:not(.pg-full) .pg-top{gap:8px;padding-right:12px}.pg-app:not(.pg-full) .pg-top .pg-full-btn{padding:5px 8px;gap:5px}.pg-app:not(.pg-full) .pg-new~.pg-full-btn{margin-left:6px}
 /* Divider tabs that stick up from the top of the page. */
 .pg-tabs{display:flex;gap:4px;padding:8px 14px 0;align-items:flex-end}
 .pg-tabs button{background:#ffffff0a;border:1px solid var(--pg-edge);border-bottom:0;border-radius:9px 9px 0 0;color:var(--pg-pencil);padding:6px 14px 5px;font:inherit;font-size:14px;line-height:1.3;cursor:pointer}
@@ -428,6 +444,9 @@ var STYLES = `
 .pg-saved{font-size:12px;line-height:1.5;color:var(--pg-pencil);margin-top:6px}
 .pg-cut{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid #ff9a7a66;background:#ff9a7a14;color:#ffc9b8;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pg-cut span{flex:1;min-width:180px}
+.pg-remember{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px dashed #b583ff66;background:#b583ff10;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pg-remember span{flex:1;min-width:180px}.pg-remember[data-done=true]{color:var(--pg-pencil);border-style:solid;border-color:var(--pg-edge);background:none}
+.pg-about{width:100%;font:inherit;font-size:14px;line-height:1.5;resize:vertical}.pg-count{display:block;text-align:right}
 .pg-unsaved{font-size:13px;line-height:1.5;white-space:pre-wrap;margin:4px 0 8px;color:var(--pg-pencil)}
 .pg-unsaved[data-warn=true]{color:#ffc9b8}
 .pg-working{display:flex;align-items:center;gap:8px;color:var(--pg-pencil);font:400 16px/var(--pg-row) var(--pg-hand)}
@@ -467,7 +486,8 @@ var STYLES = `
 .pg-note{font-size:12px;line-height:1.5;color:var(--pg-pencil)}
 /* Make my card: the page you tear out at the end. */
 .pg-make{margin-top:34px;padding-top:22px;border-top:2px dashed #a99ccc55;position:relative}
-.pg-bring{margin-left:auto}.pg-bring~.pg-full-btn,.pg-bring~.pg-layout{margin-left:8px}
+.pg-new{margin-left:auto}.pg-new~.pg-bring{margin-left:8px}.pg-new[data-armed=true]{color:#ffc9b8;border-color:#ff9a7a99}
+.pg-bring~.pg-full-btn,.pg-bring~.pg-layout{margin-left:8px}
 .pg-fixbar{padding:8px 18px;border-bottom:1px solid var(--pg-edge);background:var(--pg-desk);line-height:1.4}
 .pg-fix-line{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .pg-fix-title{font:400 17px/1.2 var(--pg-hand);color:var(--pg-violet);margin-right:auto}
@@ -522,8 +542,8 @@ var STYLES = `
 .pg-app.pg-full .pg-top{padding-top:18px}
 .pg-app.pg-full .pg-title{font-size:40px}
 .pg-app.pg-typing .pg-top{display:none}.pg-app.pg-typing .pg-tabs{padding-top:6px}
-@media (max-width:759px){.pg-full-btn:not(.pg-bring){display:none}}
-@media (max-width:480px){.pg-bring{padding:5px 8px}.pg-fixbar{padding:8px 12px}}
+@media (max-width:759px){.pg-full-btn:not(.pg-bring):not(.pg-new){display:none}}
+@media (max-width:480px){.pg-bring,.pg-new{padding:5px 8px}.pg-fixbar{padding:8px 12px}}
 @media (max-width:480px){.pg-app{--pg-m:26px}.pg-top{padding:12px 14px 2px}.pg-sub{display:none}.pg-log{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-scroll{padding-right:14px;padding-left:calc(var(--pg-m) + 10px)}.pg-compose{padding:8px 12px max(12px,env(safe-area-inset-bottom))}.pg-tabs{padding:6px 10px 0}.pg-mode{margin-left:0}}
 @media (prefers-reduced-motion:no-preference){.pg-pulse{animation:pg-pulse 1.2s ease-in-out infinite}@keyframes pg-pulse{50%{opacity:.25;transform:scale(.7)}}.pg-now .pg-cast-mark{display:inline-block;animation:pg-scribble 1.1s ease-in-out infinite}.pg-card.pg-new{animation:pg-pin .6s ease-out}@keyframes pg-pin{from{transform:translateY(-8px) rotate(-1deg);opacity:.3}to{transform:none;opacity:1}}.pg-working svg{animation:pg-scribble 1.1s ease-in-out infinite}@keyframes pg-scribble{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(3px,-1px) rotate(6deg)}50%{transform:translate(6px,1px) rotate(-3deg)}75%{transform:translate(3px,0) rotate(4deg)}}}
 `;
@@ -680,7 +700,13 @@ function setup(ctx, options = {}) {
   bringButton.type = "button";
   bringButton.title = "Bring a card you’ve played back to Paige to fix it";
   bringButton.insertAdjacentHTML("afterbegin", '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/></svg>');
-  top.append(heading, sub, bringButton, layoutSwitch, fullButton);
+  const startOver = el("button", undefined, "pg-full-btn pg-new");
+  startOver.type = "button";
+  const startOverLabel = el("span", "Start over");
+  startOver.title = "Clear the chat and notebook for a new card. Cards you already made stay in Lumiverse.";
+  startOver.insertAdjacentHTML("afterbegin", '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>');
+  startOver.append(startOverLabel);
+  top.append(heading, sub, startOver, bringButton, layoutSwitch, fullButton);
   const tabs = el("div", undefined, "pg-tabs");
   tabs.setAttribute("role", "tablist");
   const views = { chat: el("section", undefined, "pg-view"), sheet: el("section", undefined, "pg-view"), settings: el("section", undefined, "pg-view") };
@@ -989,8 +1015,18 @@ function setup(ctx, options = {}) {
     w.append(el("span", label), input, el("small", hint, "pg-note"));
     return w;
   };
-  const startOver = el("button", "Start over", "pg-btn");
-  startOver.type = "button";
+  const aboutMe = el("textarea", undefined, "pg-about");
+  aboutMe.maxLength = ABOUT_MAX;
+  aboutMe.rows = 6;
+  aboutMe.placeholder = `- I like slow-burn romance
+- I’d rather the world bring things to me than steer the story`;
+  const aboutCount = el("small", "", "pg-note pg-count");
+  const countAbout = () => {
+    aboutCount.textContent = `${aboutMe.value.length} / ${ABOUT_MAX}`;
+  };
+  aboutMe.addEventListener("input", countAbout);
+  const aboutField = field("What Paige knows about you", aboutMe, "Your tastes, one per line. Paige starts from these on every card, so she asks less about them. When she learns something new, she asks before adding it. Keep card details out of here, or every card starts to look alike.");
+  aboutField.append(aboutCount);
   const saveBackup = el("button", "Save a backup", "pg-btn");
   saveBackup.type = "button";
   const loadBackup = el("button", "Load a backup", "pg-btn");
@@ -1079,26 +1115,31 @@ function setup(ctx, options = {}) {
   }));
   let armed = null;
   startOver.addEventListener("click", () => {
+    if (busy || remoteBusy)
+      return;
     if (!armed) {
-      startOver.textContent = "Press again to clear the chat and notebook";
+      startOverLabel.textContent = "Press again";
+      startOver.dataset.armed = "true";
       armed = setTimeout(() => {
         armed = null;
-        startOver.textContent = "Start over";
+        startOverLabel.textContent = "Start over";
+        delete startOver.dataset.armed;
       }, 4000);
       return;
     }
     clearTimeout(armed);
     armed = null;
-    startOver.textContent = "Start over";
+    startOverLabel.textContent = "Start over";
+    delete startOver.dataset.armed;
     act(() => rpc.request("startOver", { mode: session?.mode ?? "full" }).then((s) => {
       session = s;
       cardName.value = "";
       makeStatus.textContent = "";
-      settingsNotify("Started over. Cards you already made are still in Lumiverse.");
       show("chat");
+      notify("Started over. The old chat is kept in Paige’s storage, and cards you already made are still in Lumiverse.");
     }));
   });
-  settingsScroll.append(field("Model connection", connection, "The model Paige talks with. It doesn’t have to be your story model."), field("Thinking", thinking, "How long the model thinks before each reply. Light keeps Paige quick."), el("div", undefined, "pg-row"), settingsStatus, el("hr"), el("p", "Save the whole chat and notebook as a file, so a long session is never lost, even if you reinstall Paige. Load it back in any time to pick up where you left off.", "pg-note"), el("div", undefined, "pg-row pg-backup"), confirmRow, backupStatus, picker, el("hr"), el("p", "Start a fresh notebook for a new card. The old chat is kept in Paige’s storage, and cards you already made stay in Lumiverse.", "pg-note"), startOver, el("p", "Paige and her interview are by Deiomo (deiomo.github.io), used with permission.", "pg-note pg-credit"));
+  settingsScroll.append(field("Model connection", connection, "The model Paige talks with. It doesn’t have to be your story model."), field("Thinking", thinking, "How long the model thinks before each reply. Light keeps Paige quick."), aboutField, el("div", undefined, "pg-row"), settingsStatus, el("hr"), el("p", "Save the whole chat and notebook as a file, so a long session is never lost, even if you reinstall Paige. Load it back in any time to pick up where you left off.", "pg-note"), el("div", undefined, "pg-row pg-backup"), confirmRow, backupStatus, picker, el("p", "Paige and her interview are by Deiomo (deiomo.github.io), used with permission.", "pg-note pg-credit"));
   settingsScroll.children[2].append(saveSettings);
   const pov = el("select");
   {
@@ -1154,7 +1195,9 @@ function setup(ctx, options = {}) {
   saveSettings.addEventListener("click", () => void act(async () => {
     if (pov.value === "preset")
       povFound.textContent = "Reading your preset…";
-    const saved = await rpc.request("saveSettings", { connectionId: connection.value, thinking: thinking.value, perspective: pov.value, presetId: presetPick.value });
+    const saved = await rpc.request("saveSettings", { connectionId: connection.value, thinking: thinking.value, perspective: pov.value, presetId: presetPick.value, aboutMe: aboutMe.value });
+    aboutMe.value = saved.aboutMe;
+    countAbout();
     if (snapshot)
       snapshot.settings = saved;
     showPov();
@@ -1373,6 +1416,10 @@ function setup(ctx, options = {}) {
           node.append(el("div", turn.saved.join(", ") + (session.card && turn.at > session.card.savedAt ? ". It’s in your notebook, not on the card yet." : ". It’s in your notebook."), "pg-saved"));
         if (turn.cut)
           node.append(cutNote(turn.cut, index === lastSaved));
+        turn.remember?.forEach((line, i) => {
+          if (line.state !== "skipped")
+            node.append(rememberNote(turn.at, i, line));
+        });
         if (index === lastSaved && Date.now() - turn.at < 4000)
           node.querySelectorAll(".pg-card").forEach((t) => t.classList.add("pg-new"));
       }
@@ -1391,6 +1438,31 @@ function setup(ctx, options = {}) {
       finish.addEventListener("click", () => void sendText("You got cut off. Pick up where you stopped and finish the rest, writing out any piece that didn’t make it in full."));
       note.append(finish);
     }
+    return note;
+  }
+  function rememberNote(at, index, line) {
+    const note = el("div", undefined, "pg-remember");
+    if (line.state === "added") {
+      note.append(el("span", `Paige will remember: “${line.text}”`));
+      note.dataset.done = "true";
+      return note;
+    }
+    note.append(el("span", `Remember this for next time? “${line.text}”`));
+    const add = el("button", "Add", "pg-btn pg-primary");
+    add.type = "button";
+    const no = el("button", "No thanks", "pg-btn");
+    no.type = "button";
+    const choose = (yes) => void act(async () => {
+      const r = await rpc.request("remember", { at, index, add: yes });
+      session = r.session;
+      if (snapshot)
+        snapshot.settings = r.settings;
+      aboutMe.value = r.settings.aboutMe;
+      countAbout();
+    });
+    add.addEventListener("click", () => choose(true));
+    no.addEventListener("click", () => choose(false));
+    note.append(add, no);
     return note;
   }
   function piece(block) {
@@ -1680,6 +1752,8 @@ function setup(ctx, options = {}) {
     }
     pov.value = snapshot.settings.perspective;
     presetPick.value = snapshot.settings.presetId;
+    aboutMe.value = snapshot.settings.aboutMe;
+    countAbout();
     showPov();
     renderLog(true);
     renderSheet();

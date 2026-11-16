@@ -56,6 +56,24 @@ export function listOf(value: string): string[] {
 export interface ParsedBlock { type: BlockType; name: string; body: string }
 
 /** Every labeled code block in a reply, in order. Unlabeled fences (sample lines, anything else) are left alone. */
+const REMEMBER = /^[ \t]*[*_#]*[ \t]*remember[ \t]*[*_:]*[ \t]*$/i;
+/** Is this fenced piece a line Paige suggests remembering, rather than a notebook piece? */
+export function isRemember(info: string, body: string): boolean {
+  return REMEMBER.test(info) || (!info.trim() && REMEMBER.test(body.split('\n').find(l => l.trim()) ?? ''));
+}
+/** The lines Paige suggests adding to the about-me note, from finished Remember pieces. */
+export function rememberLines(reply: string): string[] {
+  const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
+  const lines: string[] = [];
+  for (const m of reply.matchAll(fences)) {
+    if (!isRemember(m[3], m[4])) continue;
+    const body = m[3].trim() ? m[4] : m[4].replace(/^\s*[^\n]*\n?/, '');
+    const line = body.replace(/\s+/g, ' ').replace(/^[-*•]\s*/, '').trim();
+    if (line) lines.push(line.slice(0, 240));
+  }
+  return lines;
+}
+
 /** A piece Paige started but never closed, because the reply ended first. Returns its first line, or null. */
 export function unfinishedPiece(reply: string): string | null {
   const fences = /(^|\n)[ \t]*(```+|~~~+)([^\n]*)\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
