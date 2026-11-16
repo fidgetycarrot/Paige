@@ -261,7 +261,7 @@ function looksFrom(blocks) {
   const looks = [];
   for (const b of blocks) {
     const kind = b.type === "Persona" ? "persona" : "character";
-    const parts = b.type === "Main character" ? pick(b.body, ["identity", "appearance & vibe", "body & intimate details"]) : b.type === "Side character" ? pick(b.body, ["identity", "look"]) : b.type === "Persona" ? pick(b.body, ["identity", "appearance", "body & intimate details"]) : [];
+    const parts = b.type === "Main character" ? pick(b.body, ["identity", "appearance & vibe", "body & intimate details"]) : b.type === "Side character" ? pick(b.body, ["identity", "appearance", "look"]) : b.type === "Persona" ? pick(b.body, ["identity", "appearance", "body & intimate details"]) : [];
     if (!parts.some((p) => !p.startsWith("## Identity")))
       continue;
     const name = b.type === "Persona" ? personaName(b) : b.name;
@@ -531,7 +531,7 @@ function paigeRules() {
 
 ### Section notes: Persona ({{user}}'s own character)
 - Identity: Full name, Aliases, Age, Race / species, Role (who they are in this story).
-- Appearance: Height, Skin, Eyes, Hair, Face, Body type, Usual clothes, Overall vibe. Non-human only: the same extra fields as the main character. Image tools read this, so concrete beats poetic.
+- Appearance: the same fields as the main character's Appearance & vibe, following the look rules. Non-human only: the same extra fields as the main character.
 - Body & intimate details (NSFW only): same fields as the main character. Optional.
 - Presence & body language: what other characters notice.
 - Background: only what the people in this story would know or could find out.
@@ -540,8 +540,24 @@ function paigeRules() {
 - Notes: anything left over.
 - In the Persona block, write the persona's real name everywhere: in Name, Full name and all through the text. Never write {{user}} in a Persona block.
 - A persona describes. It never scripts: no example dialogue, no decisions or feelings {{user}} hasn't chosen. {{user}} plays them live.`);
+  text = replaceOnce(text, "- Appearance & vibe: Height, Skin, Eyes, Hair, Face, Body type, Usual clothes, Overall vibe (what people think at first glance). Non-human only:", "- Appearance & vibe: " + LOOK_FIELDS + " Follow the look rules. Non-human only:");
+  text = replaceOnce(text, "- Presence & body language: posture, how they move, what their hands do. Used for action beats.", "- Presence & body language: first impression (what people think at first glance), posture, how they move, what their hands do. Used for action beats.");
+  text = replaceOnce(text, "- Look: one or two sentences. The one detail someone would use to describe them.", "- Appearance: the same fields as the main character's Appearance & vibe, following the look rules. Ask only for the one detail someone would use to describe them; fill in every other field yourself and show the section for keep or change. The rest of a side character stays short.");
+  text = replaceOnce(text, "- Side character: Identity first, then the rest three or four sections per message. Side characters are short on purpose.", "- Side character: Identity first, then the rest three or four sections per message. Side characters are short on purpose, except their Appearance.");
   return text;
 }
+var LOOK_FIELDS = 'Age & height, Body type (slim to heavyset, how toned or soft), Body shape (shoulders; chest and breast size, or "flat" for a flat-chested male; waist; hips; thighs; overall outline), Skin & marks (skin tone; lasting freckles, moles, scars, tattoos and where they are), Hair (colour, length, style, and how the bangs or fringe sit: blunt, swept to one side, parted, between the eyes, or none), Face (shape, jaw, cheekbones), Nose (size, shape), Eyes (colour; shape: upturned, downturned, almond, round, hooded or deep-set; lashes), Eyebrows (thickness, shape, colour), Mouth & extras (lips; teeth or fangs; lasting makeup, glasses, piercings), Usual outfit (one garment at a time with colours, then shoes and accessories).';
+var LOOK_RULES = `### Look rules (Appearance sections)
+- LumiCast reads these to draw every picture of a character, and it only keeps what's written. A face left vague comes out different in every picture.
+- The main character, every side character and the persona each get one Appearance section with every field filled, under the block's exact Name. That's the only place their look goes: don't scatter looks into other sections or other blocks, and other blocks refer to them by that same Name.
+- One look per character. If it changes by setting (armor on duty, plain clothes at home), write the default and say it's the default; other outfits go in Notes.
+- If {{user}} hasn't decided a field, pick what fits the character and write it down. Faces always get Face, Nose, Eyes and Eyebrows. Mention what you picked in one line so {{user}} can change it.
+- Plain facts in both styles: "black hair", never "hair like ink". The look gets no flavor even in embellished style.
+- No moods or expressions in the look ("smirking", "tired eyes", "warm smile"); they fight every scene. First impressions go in Presence & body language.
+- Don't write what a character lacks ("no tattoos", "no glasses"); leave it out.
+- Describe real faces with real features. No anime terms or anime-style features (no "anime eyes", "ahoge", "sparkly eyes", "button nose with no bridge").
+- Anything not human gets described exactly: where it is, size, colour, texture.
+- Explicit anatomy stays in Body & intimate details, never in Appearance, each detail in its own sentence.`;
 var MODE_NOTES = {
   full: `### Interview mode: full
 - Run the flow as written, one section (or the stated few) per message.
@@ -623,6 +639,7 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 - {{user}} plays their character live. Never fix the card by giving {{user}} homework or rules for how to play (a mood they have to remember, lore they have to know). Fix the world and the characters around them.
 - Never solve a problem by taking away what makes {{user}}'s character fun to play.
 - Check the fix against the rest of the card: does it contradict another piece, or need another piece changed to work?
+- Looks count too: if a character's look is thin, scattered, or breaks the look rules (no face details, moods in it, metaphors), mention it once as a side note, since LumiCast draws from it. Offer to rewrite it to the look rules; don't let it take over the fix.
 - Recommend one route and say why. Offer a second only when there's a real trade-off {{user}} should choose. Don't hand over a menu to avoid deciding.
 - When {{user}} pushes back on your idea, take it seriously: if they're right, say so and rethink from the cause, don't just bolt on a different patch.
 
@@ -723,7 +740,7 @@ function buildMessages(input) {
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), appNotes(input.mode), ...input.perspective ? [input.perspective] : [], aboutMeText(input.aboutMe ?? ""), ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
+  const system = [paigeRules(), LOOK_RULES, appNotes(input.mode), ...input.perspective ? [input.perspective] : [], aboutMeText(input.aboutMe ?? ""), ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
 
 `);
   const messages = [{ role: "system", content: system }];

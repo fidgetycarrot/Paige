@@ -225,3 +225,22 @@ describe('remembering tastes', () => {
     expect(buildMessages({ mode: 'full', blocks: [], turns: [], aboutMe: '- Likes slow burn' })[0].content).toContain('- Likes slow burn');
   });
 });
+
+describe('looks for LumiCast', () => {
+  test('every character gets the full look fields and the look rules', () => {
+    const system = buildMessages({ mode: 'full', blocks: [], turns: [] })[0].content;
+    expect(system).toContain('- Appearance & vibe: Age & height, Body type');
+    expect(system).toContain('Eyebrows (thickness, shape, colour)');
+    expect(system).toContain('- Appearance: the same fields as the main character\'s Appearance & vibe');
+    expect(system).not.toContain('- Look: one or two sentences');
+    expect(system).toContain('### Look rules');
+    expect(system).toContain('first impression (what people think at first glance)');
+  });
+  test('a side character’s Appearance section goes to LumiCast, and old Look sections still do', () => {
+    const block = (name: string, look: string) => ({ id: name, type: 'Side character' as const, name, body: `Name: ${name}\n## Identity\nAge: 30\n## ${look}\nBlack hair.\n## Quirk\nHums.`, updatedAt: 0 });
+    const looks = looksFrom([block('Mara', 'Appearance'), block('Ash', 'Look')]);
+    expect(looks.map(l => l.name)).toEqual(['Mara', 'Ash']);
+    expect(looks[0].description).toContain('Black hair.');
+    expect(looks[0].description).not.toContain('Hums.');
+  });
+});

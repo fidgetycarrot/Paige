@@ -189,7 +189,7 @@ export function looksFrom(blocks: Block[]): Look[] {
   for (const b of blocks) {
     const kind = b.type === 'Persona' ? 'persona' : 'character';
     const parts = b.type === 'Main character' ? pick(b.body, ['identity', 'appearance & vibe', 'body & intimate details'])
-      : b.type === 'Side character' ? pick(b.body, ['identity', 'look'])
+      : b.type === 'Side character' ? pick(b.body, ['identity', 'appearance', 'look'])
       : b.type === 'Persona' ? pick(b.body, ['identity', 'appearance', 'body & intimate details'])
       : [];
     // Without a look section there is nothing to draw.

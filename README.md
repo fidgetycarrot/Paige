@@ -32,6 +32,8 @@ Give it these permissions: generation, characters, world_books, personas, preset
 
 If a reply ends before Paige finishes (it hits the length limit, or breaks off in the middle of a piece), a note under it says so and what didn't make it in, with **Ask her to finish**. The notebook also lists what isn't on the card yet, so you know when it's safe to play.
 
+**Looks for LumiCast.** Every character (main, side and persona) gets one full Appearance section: age and height, body, skin, hair and bangs, face, nose, eyes, eyebrows, mouth, and outfit, in plain facts. Paige fills in anything you didn't decide, so faces stay the same from picture to picture. No moods, metaphors or anime terms in a look.
+
 **What Paige knows about you** (Settings) is a short note of your tastes, one per line. Paige starts every card from it, so she asks less about things she already knows. When she learns a lasting taste, she suggests a line under her reply with **Add** and **No thanks**; nothing is added without your yes. She's told to keep card details out of it and not to make every card alike.
 
 **Start over** is at the top of the panel. Press it twice to clear the chat and notebook; the old chat stays in Paige's storage, and cards you made stay in Lumiverse.
