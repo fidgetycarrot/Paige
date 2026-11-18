@@ -34,7 +34,7 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 
 **Looks for LumiCast.** Every character (main, side and persona) gets one full Appearance section: age and height, body, skin, hair and bangs, face, nose, eyes, eyebrows, mouth, and outfit, in plain facts. Paige fills in anything you didn't decide, so faces stay the same from picture to picture. No moods, metaphors or anime terms in a look.
 
-**Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, and characters get a home outfit. In fixing mode Paige has a list of common problems and where they come from.
+**Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, characters get a home outfit, shared things (an oath, a power) live in one lorebook entry, and trigger words include nicknames and descriptions but not everyday words. In fixing mode Paige has a list of common problems and where they come from.
 
 **What Paige knows about you** (Settings) is a short note of your tastes, one per line. Paige starts every card from it, so she asks less about things she already knows. When she learns a lasting taste, she suggests a line under her reply with **Add** and **No thanks**; nothing is added without your yes. She's told to keep card details out of it and not to make every card alike.
 

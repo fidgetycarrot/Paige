@@ -59,6 +59,12 @@ export function paigeRules(): string {
   text = replaceOnce(text,
     '- Function in the story: Why they show up, Connection to the main cast.',
     '- Function in the story: Why they show up, Connection to the main cast, With {{user}} (where they stand with {{user}} right now, one line).');
+  text = replaceOnce(text,
+    '"The kitchen" fires every time anyone mentions any kitchen. Blank keys on the name.',
+    '"The kitchen" fires every time anyone mentions any kitchen. Blank keys on the name. Add the indirect ways people refer to it in a scene: nicknames, descriptions ("the blue-haired maid", "the scar", "that night"). Leave out everyday words that come up in every scene.');
+  text = replaceOnce(text,
+    '- Identity: Full name, Aliases (they become trigger words), Age, Race / species, Role.',
+    '- Identity: Full name, Aliases (they become trigger words, so include what people call them in passing: "the blue-haired maid", "the new guard"), Age, Race / species, Role.');
   return text;
 }
 
@@ -68,7 +74,11 @@ const LOOK_FIELDS = 'Age & height, Body type (slim to heavyset, how toned or sof
 /** Rules for every piece, from what makes cards play well. */
 const CARD_RULES = `### Card rules (every piece)
 - One home per fact. Each fact lives in one piece only: the main character's look isn't repeated in a side character's entry, and a place described in its Location entry isn't described again in the Scenario. Another piece can mention it by name. At the hand-off, check for facts that sit in two pieces, say which piece keeps each one, and offer to remove the other copy.
-- Write what is true, not what to avoid. A fact can be negative ("she can't swim"). An instruction to the writer ("don't make her nice", "never let him break character") is wasted, and naming the thing often makes the model do it. Write the true behavior instead ("she's curt with strangers and slow to warm up").`;
+- Write what is true, not what to avoid. A fact can be negative ("she can't swim"). An instruction to the writer ("don't make her nice", "never let him break character") is wasted, and naming the thing often makes the model do it. Write the true behavior instead ("she's curt with strangers and slow to warm up").
+- Shared things live in one entry. If several characters share an oath, a power, a uniform or a rule, it goes in the Faction or Concept entry, and each character's entry just names it.
+- Lorebook entries are reference: several load at once, so each holds what a scene needs, in short facts. History entries are the exception; when one comes up, the story of what happened is the point.
+- No notes about the story itself: no themes, no "this represents her grief", no notes to the writer. The model can't act on those. Write what happened and how people act.
+- At the hand-off, also check trigger words: if one everyday word would set off several entries at once, make those triggers more specific.`;
 
 /** How looks are written, because LumiCast turns them into image tags and keeps only what's stated. */
 const LOOK_RULES = `### Look rules (Appearance sections)

@@ -236,6 +236,8 @@ describe('looks for LumiCast', () => {
     expect(system).toContain('### Look rules');
     expect(system).toContain('first impression (what people think at first glance)');
     expect(system).toContain('### Card rules');
+    expect(system).toContain('the blue-haired maid');
+    expect(system).toContain('Shared things live in one entry.');
     expect(system).toContain('start with {{user}}: where they stand with {{user}} right now');
     expect(system).toContain('With {{user}} (where they stand');
     expect(system).toContain('Home outfit (what they wear off duty');
