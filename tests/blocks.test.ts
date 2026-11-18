@@ -235,6 +235,10 @@ describe('looks for LumiCast', () => {
     expect(system).not.toContain('- Look: one or two sentences');
     expect(system).toContain('### Look rules');
     expect(system).toContain('first impression (what people think at first glance)');
+    expect(system).toContain('### Card rules');
+    expect(system).toContain('start with {{user}}: where they stand with {{user}} right now');
+    expect(system).toContain('With {{user}} (where they stand');
+    expect(system).toContain('Home outfit (what they wear off duty');
   });
   test('a side character’s Appearance section goes to LumiCast, and old Look sections still do', () => {
     const block = (name: string, look: string) => ({ id: name, type: 'Side character' as const, name, body: `Name: ${name}\n## Identity\nAge: 30\n## ${look}\nBlack hair.\n## Quirk\nHums.`, updatedAt: 0 });

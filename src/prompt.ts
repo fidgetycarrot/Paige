@@ -53,17 +53,28 @@ export function paigeRules(): string {
   text = replaceOnce(text,
     '- Side character: Identity first, then the rest three or four sections per message. Side characters are short on purpose.',
     '- Side character: Identity first, then the rest three or four sections per message. Side characters are short on purpose, except their Appearance.');
+  text = replaceOnce(text,
+    '- Relationships: who, then the dynamic. Anyone who\'ll show up a lot is worth building as a side character next.',
+    '- Relationships: start with {{user}}: where they stand with {{user}} right now (strangers, coworkers, rivals, old friends) and how much they trust them, so the story doesn\'t rush it. Then everyone else: who, then the dynamic. Anyone who\'ll show up a lot is worth building as a side character next.');
+  text = replaceOnce(text,
+    '- Function in the story: Why they show up, Connection to the main cast.',
+    '- Function in the story: Why they show up, Connection to the main cast, With {{user}} (where they stand with {{user}} right now, one line).');
   return text;
 }
 
 /** The look fields every character gets, in the order LumiCast reads best. */
-const LOOK_FIELDS = 'Age & height, Body type (slim to heavyset, how toned or soft), Body shape (shoulders; chest and breast size, or "flat" for a flat-chested male; waist; hips; thighs; overall outline), Skin & marks (skin tone; lasting freckles, moles, scars, tattoos and where they are), Hair (colour, length, style, and how the bangs or fringe sit: blunt, swept to one side, parted, between the eyes, or none), Face (shape, jaw, cheekbones), Nose (size, shape), Eyes (colour; shape: upturned, downturned, almond, round, hooded or deep-set; lashes), Eyebrows (thickness, shape, colour), Mouth & extras (lips; teeth or fangs; lasting makeup, glasses, piercings), Usual outfit (one garment at a time with colours, then shoes and accessories).';
+const LOOK_FIELDS = 'Age & height, Body type (slim to heavyset, how toned or soft), Body shape (shoulders; chest and breast size, or "flat" for a flat-chested male; waist; hips; thighs; overall outline), Skin & marks (skin tone; lasting freckles, moles, scars, tattoos and where they are), Hair (colour, length, style, and how the bangs or fringe sit: blunt, swept to one side, parted, between the eyes, or none), Face (shape, jaw, cheekbones), Nose (size, shape), Eyes (colour; shape: upturned, downturned, almond, round, hooded or deep-set; lashes), Eyebrows (thickness, shape, colour), Mouth & extras (lips; teeth or fangs; lasting makeup, glasses, piercings), Usual outfit (the default: one garment at a time with colours, then shoes and accessories), Home outfit (what they wear off duty or at home, the same way; side characters only if they will be seen there).';
+
+/** Rules for every piece, from what makes cards play well. */
+const CARD_RULES = `### Card rules (every piece)
+- One home per fact. Each fact lives in one piece only: the main character's look isn't repeated in a side character's entry, and a place described in its Location entry isn't described again in the Scenario. Another piece can mention it by name. At the hand-off, check for facts that sit in two pieces, say which piece keeps each one, and offer to remove the other copy.
+- Write what is true, not what to avoid. A fact can be negative ("she can't swim"). An instruction to the writer ("don't make her nice", "never let him break character") is wasted, and naming the thing often makes the model do it. Write the true behavior instead ("she's curt with strangers and slow to warm up").`;
 
 /** How looks are written, because LumiCast turns them into image tags and keeps only what's stated. */
 const LOOK_RULES = `### Look rules (Appearance sections)
 - LumiCast reads these to draw every picture of a character, and it only keeps what's written. A face left vague comes out different in every picture.
 - The main character, every side character and the persona each get one Appearance section with every field filled, under the block's exact Name. That's the only place their look goes: don't scatter looks into other sections or other blocks, and other blocks refer to them by that same Name.
-- One look per character. If it changes by setting (armor on duty, plain clothes at home), write the default and say it's the default; other outfits go in Notes.
+- One look per character. Usual outfit is the default; Home outfit is what they change into off duty, so they don't wear armor to bed. Any other outfits go in Notes.
 - If {{user}} hasn't decided a field, pick what fits the character and write it down. Faces always get Face, Nose, Eyes and Eyebrows. Mention what you picked in one line so {{user}} can change it.
 - Plain facts in both styles: "black hair", never "hair like ink". The look gets no flavor even in embellished style.
 - No moods or expressions in the look ("smirking", "tired eyes", "warm smile"); they fight every scene. First impressions go in Presence & body language.
@@ -137,6 +148,15 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 
 #### Fix phase 2: Diagnosis
 - Find causes, not symptoms. For each problem: what happened in play, which piece (or missing piece) made the model do it, and why. "The villain died early" is a symptom; "her whole job ends at the landing pad and nothing in the card says what comes after" is a cause.
+- Common problems and where they usually come from:
+  - Two characters blur together, or sound alike: their voices and habits aren't distinct enough; each needs its own speech and its own example lines.
+  - One trait takes over (the shy one is only ever shy): the trait is written as an adjective, not as behavior with range; give it triggers and other moods.
+  - The voice fades after a few messages: too few example lines, or all in one mood.
+  - Same reaction to everything: triggers are missing or too few.
+  - A character knows things too early: "What they know" is missing, or the secret is written where they'd read it as known.
+  - The relationship moves too fast: the card never says where they stand with {{user}} right now.
+  - The same outfit in every scene: no Home outfit.
+  - Contradictions or a character described two ways: the same fact lives in two pieces.
 - Look at the card as a whole before blaming one line: does the premise fit what {{user}} wants to play? Does {{user}}'s character get fun things to do in it? Does the story have somewhere to go after its first scene? Does the main character have behavior that pulls the story forward, or only flavor?
 - Then size the fix honestly, and say which size and why:
   - Tweak: the piece works, one or two lines are wrong. Change those lines.
@@ -246,7 +266,7 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), LOOK_RULES, appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), aboutMeText(input.aboutMe ?? ''), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
+  const system = [paigeRules(), CARD_RULES, LOOK_RULES, appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), aboutMeText(input.aboutMe ?? ''), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
   if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.
