@@ -3,7 +3,7 @@ import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, rememberLi
 import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
-import { ABOUT_MAX, record, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
+import { ABOUT_MAX, PICTURE_MAX_BYTES, PICTURE_MIMES, record, type PictureMime, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 import { uuid } from './safe-id';
 import { DETECT_SYSTEM, FALLBACK_POV, parseDetection, perspectiveRule, POV_NAMES, POV_SETTINGS, POVS, presetText, type Pov, type PovSetting } from './perspective';
 
@@ -18,6 +18,20 @@ const sameLine = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]+/g
 const REASONING = { light: { source: 'custom', apiReasoning: true, effort: 'low' }, off: { source: 'off' }, inherit: undefined } as const;
 const SESSION = 'session.json', SETTINGS = 'settings.json';
 const MAX_TURNS = 600;
+const PICTURE_ID = /^[a-z0-9-]{8,64}$/i;
+const pictureExt = (mime: PictureMime) => mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+const picturePath = (p: { id: string; mime: PictureMime }) => `pictures/${p.id}.${pictureExt(p.mime)}`;
+function fromBase64(data: string): Uint8Array {
+  const raw = atob(data);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+function toBase64(bytes: Uint8Array): string {
+  let raw = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) raw += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(raw);
+}
 
 /** Fixing a whole card takes more thought than building one section, so Light thinking steps up to Medium there. */
 export const thinkingFor = (session: Session, level: Thinking) => session.source && level === 'light' ? { source: 'custom', apiReasoning: true, effort: 'medium' } as const : REASONING[level];
@@ -41,9 +55,13 @@ function readSession(value: unknown): Session | null {
       .map(x => ({ text: String(x.text).slice(0, 240), state: (['open', 'added', 'skipped'].includes(String(x.state)) ? x.state : 'open') as 'open' | 'added' | 'skipped' }));
     return list.length ? { remember: list } : {};
   };
+  const pictureOf = (v: unknown): Pick<Turn, 'picture'> => {
+    const p = record(v);
+    return typeof p.id === 'string' && PICTURE_ID.test(p.id) && PICTURE_MIMES.includes(p.mime as PictureMime) ? { picture: { id: p.id, mime: p.mime as PictureMime } } : {};
+  };
   const turns: Turn[] = v.turns.filter(t => record(t).role === 'user' || record(t).role === 'assistant').map(t => {
     const r = record(t);
-    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}), ...cutOf(r.cut), ...rememberOf(r.remember) };
+    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}), ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture) };
   });
   const blocks: Block[] = v.blocks.map(b => record(b)).filter(b => typeof b.id === 'string' && (BLOCK_TYPES as readonly string[]).includes(String(b.type))).map(b => ({
     id: String(b.id), type: b.type as BlockType, name: String(b.name ?? ''), body: String(b.body ?? ''), updatedAt: Number(b.updatedAt) || 0,
@@ -132,6 +150,14 @@ export function setupBackend(api: SpindleAPI) {
         // Read the preset now, so the panel can show what Paige found.
         if (state.settings.perspective === 'preset' && connectionId) await perspectiveFor(true).catch(() => {});
         return state.settings;
+      }
+      if (r.action === 'picture') {
+        // A picture from this chat, for the panel to show.
+        const turn = session().turns.find(t => t.picture?.id === input.id);
+        if (!turn?.picture) throw new Error('That picture is gone.');
+        const bytes = await api.userStorage.readBinary(picturePath(turn.picture), userId).catch(() => null);
+        if (!bytes) throw new Error('That picture is gone.');
+        return { mime: turn.picture.mime, data: toBase64(bytes) };
       }
       if (r.action === 'remember') {
         // Add or skip a line Paige suggested for the about-me note.
@@ -272,10 +298,20 @@ export function setupBackend(api: SpindleAPI) {
         if (!connection) throw new Error('Paige\'s model connection is gone. Pick another one under Settings.');
         const current = session();
         if (r.action === 'send') {
-          const message = text(input.text, 'message (maximum 20,000 characters)', 20_000);
-          if (!message) throw new Error('Type something first.');
+          const message = text(input.text ?? '', 'message (maximum 20,000 characters)', 20_000);
+          const sent = record(input.picture);
+          let picture: Turn['picture'];
+          if (input.picture !== undefined) {
+            const mime = sent.mime as PictureMime;
+            if (!PICTURE_MIMES.includes(mime) || typeof sent.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(sent.data)) throw new Error('That picture couldn’t be read. Try a JPEG, PNG or WebP.');
+            const bytes = fromBase64(sent.data);
+            if (bytes.length > PICTURE_MAX_BYTES) throw new Error('That picture is too big. Try a smaller one.');
+            picture = { id: uuid(), mime };
+            await api.userStorage.writeBinary(picturePath(picture), bytes, userId);
+          }
+          if (!message && !picture) throw new Error('Type something first.');
           if (current.turns.length >= MAX_TURNS) throw new Error('This session is very long. Make the card, then use Start over for the next one.');
-          current.turns.push({ role: 'user', content: message, at: Date.now() });
+          current.turns.push({ role: 'user', content: message, at: Date.now(), ...(picture ? { picture } : {}) });
           current.undo = current.blocks.map(b => ({ ...b }));
         } else {
           // A retry takes back Paige's last reply and whatever it put on the Sheet.
@@ -293,7 +329,7 @@ export function setupBackend(api: SpindleAPI) {
         try {
           const request: GenerationRequestDTO & { provider: string; model: string } = {
             type: 'raw', connection_id: connection.id, provider: connection.provider, model: connection.model, userId,
-            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, 'default')), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined, aboutMe: settings.aboutMe }),
+            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: await withPicture(current.turns), perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, 'default')), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined, aboutMe: settings.aboutMe }),
             parameters: { max_tokens: 16000 }, ...(thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking)! } } : {}), signal: controller.signal,
           };
           let reasoning = '', finish = '';
@@ -316,7 +352,7 @@ export function setupBackend(api: SpindleAPI) {
             }
           } catch (error) {
             if (controller.signal.aborted && written.trim()) finish = 'stopped';
-            else { if (controller.signal.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); throw generationError(error, connection.provider, connection.model); }
+            else { if (controller.signal.aborted) throw Object.assign(new Error('Stopped.'), { name: 'AbortError' }); throw generationError(error, connection.provider, connection.model, !!lastPicture(current.turns)); }
           }
           if (!written.trim()) throw new ModelRequestError(reasoning ? 'The model only thought and never answered. Set Thinking to Off or Light under Settings, or try again.' : `The model sent back an empty reply (finish reason: ${finish || 'none given'}). Try again, or pick another connection.`);
           const parsed = parseBlocks(written);
@@ -372,11 +408,12 @@ export function setupBackend(api: SpindleAPI) {
           const persona = existing ? await api.personas.update(existing.id, plan.persona, userId) : await api.personas.create({ ...plan.persona, metadata: mark }, userId);
           personaId = persona.id; personaName = persona.name;
         } else if (current.card?.personaId) personaNote = 'The persona from last time was left alone in Lumiverse.';
+        const pictureNote = await setCardPicture(character.id, input.pictureId);
         current.card = { characterId: character.id, worldBookId: book.id, personaId, name: character.name, savedAt: Date.now() };
         await persist(); broadcast();
         let cast: CastStatus | null = null;
         if (input.sendLooks === true) cast = await sendLooks(current, plan.card.name);
-        return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: plan.notes, cast, session: current } satisfies CardResult;
+        return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: [...plan.notes, ...pictureNote], cast, session: current } satisfies CardResult;
       }
 
       if (r.action === 'sendLooks') return await sendLooks(session(), session().card?.name ?? '', Array.isArray(input.only) ? input.only.filter((n): n is string => typeof n === 'string').slice(0, 40) : undefined);
@@ -389,6 +426,29 @@ export function setupBackend(api: SpindleAPI) {
         } catch { return null; }
       }
       throw new Error('Unknown Paige action.');
+
+      /** Pictures go to the model only with the newest message you sent; earlier ones are marked as already seen. */
+      function lastPicture(turns: Turn[]): Turn['picture'] {
+        for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === 'user') return turns[i].picture;
+        return undefined;
+      }
+      async function withPicture(turns: Turn[]) {
+        const newest = lastPicture(turns);
+        const data = newest ? await api.userStorage.readBinary(picturePath(newest), userId).then(toBase64).catch(() => null) : null;
+        return turns.map(t => ({ role: t.role, content: t.content, ...(t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : 'seen' as const } : {}) }));
+      }
+
+      /** Makes one of your pictures the card's picture, if you picked one. Returns a note if it didn't work. */
+      async function setCardPicture(characterId: string, pictureId: unknown): Promise<string[]> {
+        if (typeof pictureId !== 'string' || !pictureId) return [];
+        const turn = session().turns.find(t => t.picture?.id === pictureId);
+        try {
+          if (!turn?.picture) throw new Error('gone');
+          const bytes = await api.userStorage.readBinary(picturePath(turn.picture), userId);
+          await api.characters.setAvatar(characterId, { data: bytes, mime_type: turn.picture.mime, filename: `paige.${pictureExt(turn.picture.mime)}` }, userId);
+          return [];
+        } catch { return ['The card’s picture couldn’t be set. Add it in Lumiverse if you like.']; }
+      }
 
       /** Shares everyone's looks, then asks LumiCast to turn them into Lumi Studio characters. LumiCast does the rest in the background. */
       /** only: send just these names (Choose who to send lets you pick), so the ones already in Lumi Studio aren't copied. */
@@ -521,8 +581,9 @@ export function setupBackend(api: SpindleAPI) {
           for (const [i, e] of plan.create.entries()) await api.world_books.entries.create(book.id, newEntry(e, 1000 + i), userId);
           const { id: _id, image_id: _img, created_at: _c, updated_at: _u, world_book_ids: _b, extensions, ...fields } = original;
           target = await api.characters.create({ ...fields, ...plan.patch, name, world_book_ids: [book.id], extensions: { ...(extensions ?? {}), paige: mark } }, userId);
-          if (original.image_id) notes.push('The copy has no picture yet. Add one in Lumiverse if you like.');
+          if (original.image_id && !input.pictureId) notes.push('The copy has no picture yet. Add one in Lumiverse if you like.');
         }
+        notes.push(...await setCardPicture(target.id, input.pictureId));
         let personaId = current.card?.personaId, personaName = '';
         if (plan.persona) {
           const existing = personaId ? await api.personas.get(personaId, userId).catch(() => null) : null;

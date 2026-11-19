@@ -197,8 +197,8 @@ describe('Paige prompt', () => {
   test('long chats drop the oldest turns', () => {
     const turns = Array.from({ length: 300 }, (_, i) => ({ role: (i % 2 ? 'user' : 'assistant') as 'user' | 'assistant', content: 'x'.repeat(1000) + i }));
     const messages = buildMessages({ mode: 'full', blocks: [], turns });
-    expect(messages.some(m => m.content.includes('Older messages were trimmed'))).toBe(true);
-    expect(messages.at(-2)!.content.endsWith('299')).toBe(true);
+    expect(messages.some(m => String(m.content).includes('Older messages were trimmed'))).toBe(true);
+    expect(String(messages.at(-2)!.content).endsWith('299')).toBe(true);
   });
 });
 
@@ -248,5 +248,22 @@ describe('looks for LumiCast', () => {
     expect(looks.map(l => l.name)).toEqual(['Mara', 'Ash']);
     expect(looks[0].description).toContain('Black hair.');
     expect(looks[0].description).not.toContain('Hums.');
+  });
+});
+
+describe('pictures', () => {
+  test('only the newest picture is sent; earlier ones are marked as seen', () => {
+    const messages = buildMessages({ mode: 'full', blocks: [], turns: [
+      { role: 'assistant', content: 'Hi.' },
+      { role: 'user', content: 'Her.', picture: 'seen' },
+      { role: 'assistant', content: 'Got her look down.' },
+      { role: 'user', content: '', picture: { data: 'AAAA', mime: 'image/jpeg' } },
+    ] });
+    expect(String(messages[0].content)).toContain('## Pictures');
+    expect(messages.find(m => String(m.content).startsWith('Her.'))!.content).toContain('You saw it then');
+    expect(messages.at(-2)!.content).toEqual([{ type: 'image', data: 'AAAA', mime_type: 'image/jpeg' }, { type: 'text', text: '(I sent a picture.)' }]);
+  });
+  test('no picture notes when there are no pictures', () => {
+    expect(String(buildMessages({ mode: 'full', blocks: [], turns: [{ role: 'user', content: 'hi' }] })[0].content)).not.toContain('## Pictures');
   });
 });

@@ -728,6 +728,12 @@ function exampleText() {
   return `### Example exchanges (style reference only)
 ${CARD.mes_example.replaceAll("{{char}}", "Paige")}`;
 }
+var PICTURE_NOTES = `## Pictures
+{{user}} can send a picture with a message: a character, a place, a mood, a scene.
+- You see each picture once, with the message it came with. After that you only have what you wrote down. So in that reply, take everything useful from it: write it into the pieces it belongs to, or if no piece is ready yet, describe what matters in a few plain lines in your reply.
+- A character: write their Appearance from the picture, following the look rules, field by field. Write only what you can see, plus your picks for anything the picture doesn't show (say which you picked). If {{user}} didn't say who it is in the story, ask.
+- A place, a mood or a scene: use it for the setting, the tone, or the lore, and say what you took from it.
+- If you can't tell what {{user}} wants from it, say briefly what you see and ask.`;
 var HISTORY_BUDGET = 120000;
 function aboutMeText(note) {
   const rules = `- Suggesting something to remember: when {{user}} tells you or clearly shows a lasting taste in how they like their cards or how they play (genres, kinks, tone, pacing, how big a cast, how much they steer), and it isn't already in the note below, you may suggest one short line for their note. Put it in its own piece, outside the notebook:
@@ -760,14 +766,22 @@ function buildMessages(input) {
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), CARD_RULES, LOOK_RULES, appNotes(input.mode), ...input.perspective ? [input.perspective] : [], aboutMeText(input.aboutMe ?? ""), ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
+  const system = [paigeRules(), CARD_RULES, LOOK_RULES, appNotes(input.mode), ...input.perspective ? [input.perspective] : [], aboutMeText(input.aboutMe ?? ""), ...input.turns.some((t) => t.picture) ? [PICTURE_NOTES] : [], ...input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : [], exampleText(), sheetText(input.blocks, !!input.fixing), ...input.roleplay ? [input.roleplay] : []].join(`
 
 `);
   const messages = [{ role: "system", content: system }];
   if (trimmed)
     messages.push({ role: "system", content: "(Older messages were trimmed to save room. Every finished piece is in the notebook above.)" });
-  for (const turn of kept)
-    messages.push({ role: turn.role, content: turn.content });
+  for (const turn of kept) {
+    if (turn.picture && turn.picture !== "seen")
+      messages.push({ role: turn.role, content: [{ type: "image", data: turn.picture.data, mime_type: turn.picture.mime }, { type: "text", text: turn.content || "(I sent a picture.)" }] });
+    else if (turn.picture === "seen")
+      messages.push({ role: turn.role, content: `${turn.content ? `${turn.content}
+
+` : ""}(I sent a picture with this message. You saw it then; what you took from it is in your reply and the notebook.)` });
+    else
+      messages.push({ role: turn.role, content: turn.content });
+  }
   if (messages[1]?.role === "assistant")
     messages.splice(1, 0, { role: "user", content: "(The user opened the help desk.)" });
   messages.push({ role: "system", content: CARD.post_history_instructions + `
@@ -926,6 +940,8 @@ ${PLAYER_RULE}` } : null;
 // src/contracts.ts
 var THINKING = ["light", "off", "inherit"];
 var ABOUT_MAX = 1500;
+var PICTURE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+var PICTURE_MAX_BYTES = 3000000;
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 function text(v, label, max) {
   if (typeof v !== "string" || v.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))
@@ -936,13 +952,16 @@ function text(v, label, max) {
 // src/errors.ts
 class ModelRequestError extends Error {
 }
-function generationError(error, provider, model) {
+function generationError(error, provider, model, picture = false) {
   const r = record(error);
   const message = typeof r.message === "string" ? r.message : typeof error === "string" ? error : "";
   const candidate = r.status ?? r.statusCode ?? record(r.response).status ?? message.match(/\b(?:HTTP(?:\s+error)?|API\s+error|status(?:\s+code)?)\s*[:=]?\s*([45]\d{2})\b/i)?.[1] ?? message.match(/\bfailed\s*\(([45]\d{2})\):/i)?.[1];
   const status = /^[45]\d{2}$/.test(String(candidate)) ? Number(candidate) : undefined;
   let code = "REQUEST_FAILED", detail = "Check this connection in Lumiverse and try again.";
-  if (/\brefus(?:al|ed)\b|content[ _-]?(?:filter|policy)|\bsafety\b|\bmoderation\b|PROHIBITED_CONTENT/i.test(message)) {
+  if (picture && /image|vision|multi.?modal|modalit|picture|media type|mime/i.test(message)) {
+    code = "NO_PICTURES";
+    detail = "This model may not be able to see pictures. Pick a connection whose model can (Gemini or Claude, for example) under Settings, then press Retry.";
+  } else if (/\brefus(?:al|ed)\b|content[ _-]?(?:filter|policy)|\bsafety\b|\bmoderation\b|PROHIBITED_CONTENT/i.test(message)) {
     code = "DECLINED";
     detail = "The provider refused or filtered the reply. Try again, or pick a connection that allows this content.";
   } else if (status === 401 || /unauthori|authentication|(?:invalid|incorrect|missing|expired).{0,30}(?:api.?key|credentials|token)/i.test(message)) {
@@ -1047,6 +1066,22 @@ var REASONING = { light: { source: "custom", apiReasoning: true, effort: "low" }
 var SESSION = "session.json";
 var SETTINGS = "settings.json";
 var MAX_TURNS = 600;
+var PICTURE_ID = /^[a-z0-9-]{8,64}$/i;
+var pictureExt = (mime) => mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+var picturePath = (p) => `pictures/${p.id}.${pictureExt(p.mime)}`;
+function fromBase64(data) {
+  const raw = atob(data);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0;i < raw.length; i++)
+    bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+function toBase64(bytes) {
+  let raw = "";
+  for (let i = 0;i < bytes.length; i += 32768)
+    raw += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  return btoa(raw);
+}
 var thinkingFor = (session, level) => session.source && level === "light" ? { source: "custom", apiReasoning: true, effort: "medium" } : REASONING[level];
 function freshSession(mode) {
   return { version: 1, id: uuid(), mode, startedAt: Date.now(), turns: [{ role: "assistant", content: greeting(mode), at: Date.now() }], blocks: [] };
@@ -1067,9 +1102,13 @@ function readSession(value) {
     const list = v.map(record).filter((x) => typeof x.text === "string" && x.text).slice(0, 3).map((x) => ({ text: String(x.text).slice(0, 240), state: ["open", "added", "skipped"].includes(String(x.state)) ? x.state : "open" }));
     return list.length ? { remember: list } : {};
   };
+  const pictureOf = (v) => {
+    const p = record(v);
+    return typeof p.id === "string" && PICTURE_ID.test(p.id) && PICTURE_MIMES.includes(p.mime) ? { picture: { id: p.id, mime: p.mime } } : {};
+  };
   const turns = v.turns.filter((t) => record(t).role === "user" || record(t).role === "assistant").map((t) => {
     const r = record(t);
-    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut), ...rememberOf(r.remember) };
+    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture) };
   });
   const blocks = v.blocks.map((b) => record(b)).filter((b) => typeof b.id === "string" && BLOCK_TYPES.includes(String(b.type))).map((b) => ({
     id: String(b.id),
@@ -1189,6 +1228,15 @@ function setupBackend(api) {
         if (state.settings.perspective === "preset" && connectionId)
           await perspectiveFor(true).catch(() => {});
         return state.settings;
+      }
+      if (r.action === "picture") {
+        const turn = session().turns.find((t) => t.picture?.id === input.id);
+        if (!turn?.picture)
+          throw new Error("That picture is gone.");
+        const bytes = await api.userStorage.readBinary(picturePath(turn.picture), userId).catch(() => null);
+        if (!bytes)
+          throw new Error("That picture is gone.");
+        return { mime: turn.picture.mime, data: toBase64(bytes) };
       }
       if (r.action === "remember") {
         const session = state.session;
@@ -1366,12 +1414,24 @@ function setupBackend(api) {
           throw new Error("Paige's model connection is gone. Pick another one under Settings.");
         const current = session();
         if (r.action === "send") {
-          const message = text(input.text, "message (maximum 20,000 characters)", 20000);
-          if (!message)
+          const message = text(input.text ?? "", "message (maximum 20,000 characters)", 20000);
+          const sent = record(input.picture);
+          let picture;
+          if (input.picture !== undefined) {
+            const mime = sent.mime;
+            if (!PICTURE_MIMES.includes(mime) || typeof sent.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(sent.data))
+              throw new Error("That picture couldn\u2019t be read. Try a JPEG, PNG or WebP.");
+            const bytes = fromBase64(sent.data);
+            if (bytes.length > PICTURE_MAX_BYTES)
+              throw new Error("That picture is too big. Try a smaller one.");
+            picture = { id: uuid(), mime };
+            await api.userStorage.writeBinary(picturePath(picture), bytes, userId);
+          }
+          if (!message && !picture)
             throw new Error("Type something first.");
           if (current.turns.length >= MAX_TURNS)
             throw new Error("This session is very long. Make the card, then use Start over for the next one.");
-          current.turns.push({ role: "user", content: message, at: Date.now() });
+          current.turns.push({ role: "user", content: message, at: Date.now(), ...picture ? { picture } : {} });
           current.undo = current.blocks.map((b) => ({ ...b }));
         } else {
           const last = current.turns[current.turns.length - 1];
@@ -1397,7 +1457,7 @@ function setupBackend(api) {
             provider: connection.provider,
             model: connection.model,
             userId,
-            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: current.turns, perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, "default")), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined, aboutMe: settings.aboutMe }),
+            messages: buildMessages({ mode: current.mode, blocks: current.blocks, turns: await withPicture(current.turns), perspective: await perspectiveFor(false).catch(() => perspectiveRule(FALLBACK_POV, "default")), fixing: current.source?.name, roleplay: current.roleplay?.on ? (await readRoleplay(current)).text : undefined, aboutMe: settings.aboutMe }),
             parameters: { max_tokens: 16000 },
             ...thinkingFor(current, settings.thinking) ? { reasoning: { ...thinkingFor(current, settings.thinking) } } : {},
             signal: controller.signal
@@ -1433,7 +1493,7 @@ function setupBackend(api) {
             else {
               if (controller.signal.aborted)
                 throw Object.assign(new Error("Stopped."), { name: "AbortError" });
-              throw generationError(error, connection.provider, connection.model);
+              throw generationError(error, connection.provider, connection.model, !!lastPicture(current.turns));
             }
           }
           if (!written.trim())
@@ -1499,13 +1559,14 @@ function setupBackend(api) {
           personaName = persona.name;
         } else if (current.card?.personaId)
           personaNote = "The persona from last time was left alone in Lumiverse.";
+        const pictureNote = await setCardPicture(character.id, input.pictureId);
         current.card = { characterId: character.id, worldBookId: book.id, personaId, name: character.name, savedAt: Date.now() };
         await persist();
         broadcast();
         let cast = null;
         if (input.sendLooks === true)
           cast = await sendLooks(current, plan.card.name);
-        return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: plan.notes, cast, session: current };
+        return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: [...plan.notes, ...pictureNote], cast, session: current };
       }
       if (r.action === "sendLooks")
         return await sendLooks(session(), session().card?.name ?? "", Array.isArray(input.only) ? input.only.filter((n) => typeof n === "string").slice(0, 40) : undefined);
@@ -1521,6 +1582,31 @@ function setupBackend(api) {
         }
       }
       throw new Error("Unknown Paige action.");
+      function lastPicture(turns) {
+        for (let i = turns.length - 1;i >= 0; i--)
+          if (turns[i].role === "user")
+            return turns[i].picture;
+        return;
+      }
+      async function withPicture(turns) {
+        const newest = lastPicture(turns);
+        const data = newest ? await api.userStorage.readBinary(picturePath(newest), userId).then(toBase64).catch(() => null) : null;
+        return turns.map((t) => ({ role: t.role, content: t.content, ...t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : "seen" } : {} }));
+      }
+      async function setCardPicture(characterId, pictureId) {
+        if (typeof pictureId !== "string" || !pictureId)
+          return [];
+        const turn = session().turns.find((t) => t.picture?.id === pictureId);
+        try {
+          if (!turn?.picture)
+            throw new Error("gone");
+          const bytes = await api.userStorage.readBinary(picturePath(turn.picture), userId);
+          await api.characters.setAvatar(characterId, { data: bytes, mime_type: turn.picture.mime, filename: `paige.${pictureExt(turn.picture.mime)}` }, userId);
+          return [];
+        } catch {
+          return ["The card\u2019s picture couldn\u2019t be set. Add it in Lumiverse if you like."];
+        }
+      }
       async function sendLooks(current, cardName, only) {
         const wanted = only && new Set(only.map((n) => n.trim().toLowerCase()));
         const looks = looksFrom(current.blocks).filter((l) => !wanted || wanted.has(l.name.trim().toLowerCase()));
@@ -1684,9 +1770,10 @@ ${body}` }],
             await api.world_books.entries.create(book.id, newEntry(e, 1000 + i), userId);
           const { id: _id, image_id: _img, created_at: _c, updated_at: _u, world_book_ids: _b, extensions, ...fields } = original;
           target = await api.characters.create({ ...fields, ...plan.patch, name, world_book_ids: [book.id], extensions: { ...extensions ?? {}, paige: mark } }, userId);
-          if (original.image_id)
+          if (original.image_id && !input.pictureId)
             notes.push("The copy has no picture yet. Add one in Lumiverse if you like.");
         }
+        notes.push(...await setCardPicture(target.id, input.pictureId));
         let personaId = current.card?.personaId, personaName = "";
         if (plan.persona) {
           const existing = personaId ? await api.personas.get(personaId, userId).catch(() => null) : null;

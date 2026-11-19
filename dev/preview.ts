@@ -52,6 +52,8 @@ const api = {
   userStorage: {
     getJson: async (path: string, o: { fallback: unknown }) => store.has(path) ? structuredClone(store.get(path)) : o.fallback,
     setJson: async (path: string, value: unknown) => { store.set(path, structuredClone(value)); },
+    writeBinary: async (path: string, data: Uint8Array) => { store.set(path, new Uint8Array(data)); },
+    readBinary: async (path: string) => store.get(path) as Uint8Array,
   },
   presets: {
     list: async () => ({ data: [{ id: 'p1', name: 'Marinara' }, { id: 'p2', name: 'Celia 4.1' }], total: 2 }),

@@ -36,6 +36,8 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 
 **Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, characters get a home outfit, shared things (an oath, a power) live in one lorebook entry, and trigger words include nicknames and descriptions but not everyday words. In fixing mode Paige has a list of common problems and where they come from.
 
+**Pictures.** Send a picture with a message (the picture button, paste, or drop it on the chat): a character, a place or a mood. Paige writes the look straight from it, so LumiCast's pictures match your art. She sees each picture once, with its message, and writes down what she needs, so it doesn't cost more on every turn. Pictures are shrunk before sending and kept in Paige's storage. When you make the card you can pick one as the card's picture. Paige's model connection has to be one that can see pictures.
+
 **What Paige knows about you** (Settings) is a short note of your tastes, one per line. Paige starts every card from it, so she asks less about things she already knows. When she learns a lasting taste, she suggests a line under her reply with **Add** and **No thanks**; nothing is added without your yes. She's told to keep card details out of it and not to make every card alike.
 
 **Start over** is at the top of the panel. Press it twice to clear the chat and notebook; the old chat stays in Paige's storage, and cards you made stay in Lumiverse.

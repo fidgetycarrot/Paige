@@ -24,7 +24,13 @@ export interface Turn {
   cut?: { why: 'length' | 'stopped' | 'unfinished'; finish: string; lost?: string };
   /** Lines Paige suggested adding to the about-me note, and what the user chose. */
   remember?: { text: string; state: 'open' | 'added' | 'skipped' }[];
+  /** A picture sent with this message. The model sees it once, with this message; it's kept in Paige's storage. */
+  picture?: { id: string; mime: PictureMime };
 }
+export type PictureMime = 'image/jpeg' | 'image/png' | 'image/webp';
+export const PICTURE_MIMES: PictureMime[] = ['image/jpeg', 'image/png', 'image/webp'];
+/** Pictures are shrunk in the panel first; this only stops anything huge. */
+export const PICTURE_MAX_BYTES = 3_000_000;
 export interface SavedCard { characterId: string; worldBookId: string; personaId?: string; name: string; savedAt: number }
 export interface Session {
   version: 1; id: string; mode: Mode; startedAt: number; turns: Turn[]; blocks: Block[];

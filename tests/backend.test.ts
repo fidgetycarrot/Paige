@@ -11,6 +11,7 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
   let seq = 0; const nid = (p: string) => `${p}${++seq}`;
   const chats: { id: string; character_id: string; name: string; updated_at: number }[] = [];
   const requests: unknown[] = [];
+  const avatars = new Map<string, { data: Uint8Array; mime_type: string }>();
   const presets = new Map<string, { id: string; name: string; updated_at: number; prompt_order: { name: string; content: string; enabled: boolean; marker: string | null }[] }>();
   presets.set('p1', { id: 'p1', name: 'My preset', updated_at: 1, prompt_order: [
     { name: 'Style', content: 'Write in third person. Never reveal {{char}}’s thoughts.', enabled: true, marker: null },
@@ -24,6 +25,8 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
     userStorage: {
       getJson: async (path: string, o: { fallback: unknown }) => store.has(path) ? structuredClone(store.get(path)) : o.fallback,
       setJson: async (path: string, value: unknown) => { store.set(path, structuredClone(value)); },
+      writeBinary: async (path: string, data: Uint8Array) => { store.set(path, new Uint8Array(data)); },
+      readBinary: async (path: string) => { const v = store.get(path); if (!(v instanceof Uint8Array)) throw new Error('missing'); return v; },
     },
     presets: {
       list: async () => ({ data: [...presets.values()], total: presets.size }),
@@ -45,6 +48,7 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
       get: async (id: string) => characters.get(id) ?? null,
       create: async (input: Record<string, unknown>) => { const c = { world_book_ids: [], alternate_greetings: [], ...input, id: nid('char'), updated_at: ++seq }; characters.set(c.id, c); return c; },
       update: async (id: string, input: Record<string, unknown>) => { const c = { ...characters.get(id), ...input }; characters.set(id, c); return c; },
+      setAvatar: async (id: string, avatar: { data: Uint8Array; mime_type: string }) => { avatars.set(id, avatar); return characters.get(id); },
     },
     world_books: {
       get: async (id: string) => books.get(id) ?? null,
@@ -84,7 +88,7 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
     }
     throw new Error('no reply');
   };
-  return { call, store, sent, characters, entries, personas, pool, requests, chats, books, presets, raws };
+  return { call, store, sent, characters, entries, personas, pool, requests, chats, books, presets, raws, avatars };
 }
 
 describe('Paige backend', () => {
@@ -198,6 +202,33 @@ describe('Paige backend', () => {
     expect(skipped.session.turns.at(-1)!.remember![0].state).toBe('skipped');
     await host.call('send', { text: 'ok' });
     expect((host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content).toContain('<about_user>\n- Likes slow burn\n- Wants the world to bring hooks to them.\n</about_user>');
+  });
+
+  test('a picture is stored, sent once with its message, shown back, and can become the card picture', async () => {
+    const host = fakeHost(['```\nMain character\nName: Jory\n## Appearance & vibe\nBlack hair.\n```', 'Noted.', 'Again.'], true, ['presets']);
+    await host.call('saveSettings', { connectionId: 'c1', thinking: 'off' });
+    const jpeg = btoa(String.fromCharCode(0xff, 0xd8, 0xff, 1, 2, 3));
+    const first = await host.call<{ session: { turns: { picture?: { id: string } }[] } }>('send', { text: '', picture: { data: jpeg, mime: 'image/jpeg' } });
+    const id = first.session.turns.at(-2)!.picture!.id;
+    const sent = (host.requests.at(-1) as { messages: { content: unknown }[] }).messages;
+    expect(sent.at(-2)!.content).toEqual([{ type: 'image', data: jpeg, mime_type: 'image/jpeg' }, { type: 'text', text: '(I sent a picture.)' }]);
+    expect(await host.call<unknown>('picture', { id })).toEqual({ mime: 'image/jpeg', data: jpeg });
+    // The next message doesn't carry it again.
+    await host.call('send', { text: 'next' });
+    const later = (host.requests.at(-1) as { messages: { content: unknown }[] }).messages;
+    expect(later.some(m => Array.isArray(m.content))).toBe(false);
+    expect(later.some(m => String(m.content).includes('You saw it then'))).toBe(true);
+    // A retry right after a picture sends it again.
+    await host.call('send', { text: 'look', picture: { data: jpeg, mime: 'image/jpeg' } });
+    await host.call('retry');
+    expect(Array.isArray((host.requests.at(-1) as { messages: { content: unknown }[] }).messages.at(-2)!.content)).toBe(true);
+    const made = await host.call<{ notes: string[] }>('makeCard', { name: 'Jory', pictureId: id });
+    expect(made.notes.join(' ')).not.toContain('picture');
+    const avatar = host.avatars.get([...host.characters.keys()][0])!;
+    expect(avatar.mime_type).toBe('image/jpeg');
+    expect([...avatar.data]).toEqual([0xff, 0xd8, 0xff, 1, 2, 3]);
+    await expect(host.call('send', { picture: { data: 'not base64!', mime: 'image/jpeg' } })).rejects.toThrow('couldn’t be read');
+    await expect(host.call('send', { picture: { data: jpeg, mime: 'image/gif' } })).rejects.toThrow('couldn’t be read');
   });
 
   test('retry takes back the last reply and what it saved', async () => {

@@ -240,7 +240,17 @@ export function exampleText(): string {
   return `### Example exchanges (style reference only)\n${CARD.mes_example.replaceAll('{{char}}', 'Paige')}`;
 }
 
-export type ChatTurn = { role: 'user' | 'assistant'; content: string };
+export type ChatTurn = { role: 'user' | 'assistant'; content: string; picture?: { data: string; mime: string } | 'seen' };
+type Part = { type: 'text'; text: string } | { type: 'image'; data: string; mime_type: string };
+export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string | Part[] };
+
+/** What to do with a picture {{user}} sends. Only added once there is one, so it costs nothing otherwise. */
+export const PICTURE_NOTES = `## Pictures
+{{user}} can send a picture with a message: a character, a place, a mood, a scene.
+- You see each picture once, with the message it came with. After that you only have what you wrote down. So in that reply, take everything useful from it: write it into the pieces it belongs to, or if no piece is ready yet, describe what matters in a few plain lines in your reply.
+- A character: write their Appearance from the picture, following the look rules, field by field. Write only what you can see, plus your picks for anything the picture doesn't show (say which you picked). If {{user}} didn't say who it is in the story, ask.
+- A place, a mood or a scene: use it for the setting, the tone, or the lore, and say what you took from it.
+- If you can't tell what {{user}} wants from it, say briefly what you see and ask.`;
 
 /** Older turns are dropped first; the Sheet keeps every finished piece, so nothing built is lost. */
 export const HISTORY_BUDGET = 120_000;
@@ -267,7 +277,7 @@ ${note.trim()}
 ${rules}`;
 }
 
-export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string; perspective?: string; aboutMe?: string }): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatTurn[]; userName?: string; fixing?: string; roleplay?: string; perspective?: string; aboutMe?: string }): PromptMessage[] {
   const kept: ChatTurn[] = [];
   let used = 0;
   for (let i = input.turns.length - 1; i >= 0; i--) {
@@ -276,11 +286,15 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
     kept.unshift(input.turns[i]);
   }
   const trimmed = kept.length < input.turns.length;
-  const system = [paigeRules(), CARD_RULES, LOOK_RULES, appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), aboutMeText(input.aboutMe ?? ''), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
-  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [{ role: 'system', content: system }];
+  const system = [paigeRules(), CARD_RULES, LOOK_RULES, appNotes(input.mode), ...(input.perspective ? [input.perspective] : []), aboutMeText(input.aboutMe ?? ''), ...(input.turns.some(t => t.picture) ? [PICTURE_NOTES] : []), ...(input.fixing ? [fixNotes(input.fixing, !!input.roleplay)] : []), exampleText(), sheetText(input.blocks, !!input.fixing), ...(input.roleplay ? [input.roleplay] : [])].join('\n\n');
+  const messages: PromptMessage[] = [{ role: 'system', content: system }];
   if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.
-  for (const turn of kept) messages.push({ role: turn.role, content: turn.content });
+  for (const turn of kept) {
+    if (turn.picture && turn.picture !== 'seen') messages.push({ role: turn.role, content: [{ type: 'image', data: turn.picture.data, mime_type: turn.picture.mime }, { type: 'text', text: turn.content || '(I sent a picture.)' }] });
+    else if (turn.picture === 'seen') messages.push({ role: turn.role, content: `${turn.content ? `${turn.content}\n\n` : ''}(I sent a picture with this message. You saw it then; what you took from it is in your reply and the notebook.)` });
+    else messages.push({ role: turn.role, content: turn.content });
+  }
   if (messages[1]?.role === 'assistant') messages.splice(1, 0, { role: 'user', content: '(The user opened the help desk.)' });
   messages.push({ role: 'system', content: CARD.post_history_instructions + '\n- Finished blocks use the app\'s format: type label alone on the first line inside the code fence.' });
   return messages;

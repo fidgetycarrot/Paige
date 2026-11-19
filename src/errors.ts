@@ -2,7 +2,7 @@ import { record } from './contracts';
 
 /** Never expose raw provider text: it can contain credentials or what was typed. */
 export class ModelRequestError extends Error {}
-export function generationError(error: unknown, provider: string, model: string): ModelRequestError {
+export function generationError(error: unknown, provider: string, model: string, picture = false): ModelRequestError {
   const r = record(error);
   const message = typeof r.message === 'string' ? r.message : typeof error === 'string' ? error : '';
   const candidate = r.status ?? r.statusCode ?? record(r.response).status
@@ -10,7 +10,8 @@ export function generationError(error: unknown, provider: string, model: string)
     ?? message.match(/\bfailed\s*\(([45]\d{2})\):/i)?.[1];
   const status = /^[45]\d{2}$/.test(String(candidate)) ? Number(candidate) : undefined;
   let code = 'REQUEST_FAILED', detail = 'Check this connection in Lumiverse and try again.';
-  if (/\brefus(?:al|ed)\b|content[ _-]?(?:filter|policy)|\bsafety\b|\bmoderation\b|PROHIBITED_CONTENT/i.test(message)) { code = 'DECLINED'; detail = 'The provider refused or filtered the reply. Try again, or pick a connection that allows this content.'; }
+  if (picture && /image|vision|multi.?modal|modalit|picture|media type|mime/i.test(message)) { code = 'NO_PICTURES'; detail = 'This model may not be able to see pictures. Pick a connection whose model can (Gemini or Claude, for example) under Settings, then press Retry.'; }
+  else if (/\brefus(?:al|ed)\b|content[ _-]?(?:filter|policy)|\bsafety\b|\bmoderation\b|PROHIBITED_CONTENT/i.test(message)) { code = 'DECLINED'; detail = 'The provider refused or filtered the reply. Try again, or pick a connection that allows this content.'; }
   else if (status === 401 || /unauthori|authentication|(?:invalid|incorrect|missing|expired).{0,30}(?:api.?key|credentials|token)/i.test(message)) { code = 'AUTHENTICATION'; detail = 'Check the API key saved in this Lumiverse connection.'; }
   else if (status === 402 || /insufficient.*(?:balance|credit)|balance.*insufficient/i.test(message)) { code = 'CREDIT_LIMIT'; detail = 'Check the provider account balance.'; }
   else if (status === 403) { code = 'ACCESS_DENIED'; detail = 'The provider denied this request.'; }

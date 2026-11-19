@@ -1,6 +1,7 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, isRemember, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
 import { ABOUT_MAX } from './contracts';
+import type { PictureMime } from './contracts';
 import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Settings, Snapshot } from './contracts';
 import { FALLBACK_POV, POV_NAMES, POVS, type PovSetting } from './perspective';
 import { MARKER_WOFF2 } from './font';
@@ -189,6 +190,17 @@ const STYLES = `
 .pg-app textarea:focus,.pg-app input[type=text]:focus,.pg-app select:focus{border-color:var(--pg-violet);outline:none}
 .pg-compose .pg-row{flex-wrap:nowrap}
 .pg-compose textarea{resize:none;min-height:44px;max-height:180px;flex:1}
+.pg-pic-btn{padding:0 10px;display:inline-flex;align-items:center;justify-content:center}.pg-pic-btn svg{width:20px;height:20px}
+.pg-pending{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px;color:var(--pg-pencil)}
+.pg-pending img{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--pg-edge)}
+.pg-msg .pg-pic{display:block;max-width:min(240px,100%);max-height:240px;border-radius:6px;margin-bottom:6px;object-fit:contain}
+.pg-msg .pg-pic:only-child{margin-bottom:0}
+.pg-dropping .pg-compose{outline:2px dashed var(--pg-violet);outline-offset:-4px}
+.pg-card-pics{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pg-card-pics button{padding:3px;border:2px solid transparent;border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer}
+.pg-card-pics button[aria-pressed=true]{border-color:var(--pg-violet)}
+.pg-card-pics button.pg-none{padding:6px 12px;border:1px solid var(--pg-edge)}.pg-card-pics button.pg-none[aria-pressed=true]{border:2px solid var(--pg-violet)}
+.pg-card-pics img{display:block;width:56px;height:56px;object-fit:cover;border-radius:5px}
 .pg-app button.pg-btn{border:1px solid var(--pg-edge);border-radius:8px;background:#ffffff0a;color:inherit;padding:9px 15px;font:inherit;line-height:1.4;cursor:pointer;white-space:nowrap}
 .pg-app button.pg-primary{background:var(--pg-violet);border-color:var(--pg-violet);color:var(--pg-violet-ink);font-weight:650}
 .pg-app button:disabled{opacity:.45;cursor:default}
@@ -416,8 +428,38 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const stopButton = el('button', 'Stop', 'pg-btn'); stopButton.type = 'button';
   const retryButton = el('button', 'Retry', 'pg-btn'); retryButton.type = 'button'; retryButton.title = 'Take back Paige’s last reply and ask again';
   const status = el('div', undefined, 'pg-status'); status.setAttribute('role', 'status');
-  const row = el('div', undefined, 'pg-row'); row.append(box, sendButton, stopButton, retryButton);
-  compose.append(chips, row, status);
+  // A picture to send with the next message: the button, pasting, or dropping one on the chat.
+  const picButton = el('button', undefined, 'pg-btn pg-pic-btn'); picButton.type = 'button';
+  picButton.title = 'Send a picture: a character, a place or a mood'; picButton.setAttribute('aria-label', 'Add a picture');
+  picButton.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/></svg>');
+  const picFile = el('input'); picFile.type = 'file'; picFile.accept = 'image/*'; picFile.hidden = true;
+  const pending = el('div', undefined, 'pg-pending'); pending.hidden = true;
+  let pendingPicture: { data: string; mime: PictureMime; url: string } | null = null;
+  const row = el('div', undefined, 'pg-row'); row.append(picButton, box, sendButton, stopButton, retryButton);
+  compose.append(chips, pending, row, status, picFile);
+  const showPending = () => {
+    pending.replaceChildren(); pending.hidden = !pendingPicture;
+    if (!pendingPicture) { box.placeholder = 'Answer Paige…'; return; }
+    const img = el('img'); img.src = pendingPicture.url; img.alt = 'Picture to send';
+    const drop = el('button', 'Remove', 'pg-btn'); drop.type = 'button';
+    drop.addEventListener('click', () => { pendingPicture = null; showPending(); });
+    pending.append(img, el('span', 'Goes with your next message.'), drop);
+    box.placeholder = 'Who or what is it?';
+  };
+  async function takePicture(file: File | null | undefined) {
+    if (!file || !file.type.startsWith('image/')) return;
+    try { pendingPicture = await shrink(file); showPending(); box.focus(); }
+    catch { notify('That picture couldn’t be opened. Try a JPEG, PNG or WebP.', true); }
+  }
+  picButton.addEventListener('click', () => picFile.click());
+  picFile.addEventListener('change', () => { void takePicture(picFile.files?.[0]); picFile.value = ''; });
+  box.addEventListener('paste', e => {
+    const file = [...(e.clipboardData?.items ?? [])].find(i => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+    if (file) { e.preventDefault(); void takePicture(file); }
+  });
+  views.chat.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items ?? [])].some(i => i.kind === 'file')) { e.preventDefault(); app.classList.add('pg-dropping'); } });
+  views.chat.addEventListener('dragleave', e => { if (e.target === views.chat || !views.chat.contains(e.relatedTarget as Node)) app.classList.remove('pg-dropping'); });
+  views.chat.addEventListener('drop', e => { app.classList.remove('pg-dropping'); const file = e.dataTransfer?.files?.[0]; if (file) { e.preventDefault(); void takePicture(file); } });
   // When a card is back for fixes: which card, and the switch that lets Paige read one of its chats.
   const fixBar = el('div', undefined, 'pg-fixbar'); fixBar.hidden = true;
   const fixTitle = el('span', '', 'pg-fix-title');
@@ -517,14 +559,34 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   copyRow.hidden = true;
   copyBox.addEventListener('change', () => { if (copyBox.checked && !cardName.value && session?.source) cardName.value = `${session.source.name} (fixed)`; renderSheet(); });
   const unsaved = el('div', undefined, 'pg-unsaved'); unsaved.setAttribute('role', 'status');
-  make.append(makeTitle, makeHint, copyRow, nameField, looksRow, unsaved, makeRow, pick, makeStatus, cast);
+  // Use one of the pictures from the chat as the card's picture. Off unless you pick one.
+  let cardPicture = '';
+  const cardPics = el('div', undefined, 'pg-card-pics'); cardPics.setAttribute('role', 'group'); cardPics.setAttribute('aria-label', 'Card picture');
+  const cardPicField = el('div', undefined, 'pg-field'); cardPicField.append(el('span', 'Card picture'), cardPics, el('small', 'Use a picture you sent as the card’s picture. Left as it is unless you pick one.', 'pg-note'));
+  make.append(makeTitle, makeHint, copyRow, nameField, cardPicField, looksRow, unsaved, makeRow, pick, makeStatus, cast);
+  function renderCardPics() {
+    const pics = (session?.turns ?? []).flatMap(t => t.picture && !t.picture.id.startsWith('local-') ? [t.picture.id] : []);
+    if (cardPicture && !pics.includes(cardPicture)) cardPicture = '';
+    cardPicField.hidden = !pics.length;
+    if (!pics.length) return;
+    const shown = [...cardPics.querySelectorAll('button')].map(b => b.dataset.id ?? '');
+    if (shown.join() !== ['', ...pics].join()) {
+      cardPics.replaceChildren();
+      const none = el('button', 'None', 'pg-none'); none.type = 'button'; none.dataset.id = '';
+      cardPics.append(none);
+      pics.forEach((id, i) => { const b = el('button'); b.type = 'button'; b.dataset.id = id; b.append(pictureImg(id, '', `Picture ${i + 1}`)); cardPics.append(b); });
+      cardPics.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { cardPicture = b.dataset.id ?? ''; renderCardPics(); }));
+    }
+    cardPics.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.id ?? '') === cardPicture)));
+  }
   sheetScroll.append(pieces, make);
   views.sheet.append(sheetScroll);
   makeButton.addEventListener('click', () => void act(async () => {
     const fixing = !!session?.source, asCopy = fixing && copyBox.checked;
     makeNotify(fixing ? (asCopy ? 'Saving the copy…' : 'Saving the fixes…') : 'Making the card…');
-    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked, asCopy });
+    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked, asCopy, ...(cardPicture ? { pictureId: cardPicture } : {}) });
     session = result.session;
+    if (cardPicture && !result.notes.some(n => n.includes('picture couldn’t'))) { result.notes.push('The card’s picture is set.'); cardPicture = ''; }
     if (asCopy) { copyBox.checked = false; }
     const made = [
       fixing ? (result.changes?.length ? `${asCopy ? `Saved the copy “${result.name}”` : `Saved to “${result.name}”`}. Changed: ${result.changes.join(', ')}.` : asCopy ? `Saved the copy “${result.name}”. Nothing was changed from the original.` : 'Nothing changed since the last save, so the card was left alone.')
@@ -687,7 +749,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   }
 
   function sendText(text: string) {
-    if (!text.trim()) return;
+    if (!text.trim() && !pendingPicture) return;
     if (!snapshot?.settings.connectionId) { show('settings'); settingsNotify('Pick a model connection for Paige first.', true); return; }
     return talk('send', text);
   }
@@ -695,7 +757,13 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   async function talk(action: 'send' | 'retry', text?: string) {
     if (busy || closed || remoteBusy) return;
     busy = true;
-    if (action === 'send' && session) { session.turns.push({ role: 'user', content: text!.trim(), at: Date.now() }); box.value = ''; grow(); }
+    const picture = action === 'send' ? pendingPicture : null;
+    if (action === 'send' && session) {
+      const local = picture ? { id: `local-${Date.now()}`, mime: picture.mime } : undefined;
+      if (local && picture) pictureUrls.set(local.id, picture.url);
+      session.turns.push({ role: 'user', content: text!.trim(), at: Date.now(), ...(local ? { picture: local } : {}) });
+      box.value = ''; grow(); pendingPicture = null; showPending();
+    }
     if (action === 'retry' && session && session.turns[session.turns.length - 1]?.role === 'assistant' && session.turns.length > 1) session.turns.pop();
     renderLog();
     const node = el('div', undefined, 'pg-msg pg-paige');
@@ -711,17 +779,20 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (matchMedia?.('(pointer: coarse)').matches) box.blur();
     update(); notify('');
     try {
-      const result = await rpc.request<{ session: Session; stopped: boolean; cutOff: boolean }>(action, action === 'send' ? { text } : {}, partial => {
+      const result = await rpc.request<{ session: Session; stopped: boolean; cutOff: boolean }>(action, action === 'send' ? { text, ...(picture ? { picture: { data: picture.data, mime: picture.mime } } : {}) } : {}, partial => {
         if (!streaming) return;
         const keep = log.scrollTop;
         streaming.text = partial; streaming.node.replaceChildren(); message(streaming.node, partial, true);
         log.scrollTop = keep;
       });
       session = result.session;
+      if (picture) { const saved = [...session.turns].reverse().find(t => t.role === 'user')?.picture; if (saved) pictureUrls.set(saved.id, picture.url); }
       if (result.cutOff) notify('Paige got cut off before she finished. Ask her to finish, or press Retry.');
       else if (result.stopped) notify('Stopped. What she wrote so far is kept.');
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Paige didn’t answer.', true);
+      // If the picture never made it in, it waits in the box again.
+      if (picture && !/press Retry/.test(e instanceof Error ? e.message : '')) { pendingPicture = picture; showPending(); }
       try { const fresh = await rpc.request<Snapshot>('snapshot'); snapshot = fresh; session = fresh.session; } catch { /* keep what we have */ }
     } finally {
       streaming = null; busy = false;
@@ -795,7 +866,11 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     const lastSaved = session.turns.length - 1;
     session.turns.forEach((turn, index) => {
       const node = el('div', undefined, `pg-msg ${turn.role === 'user' ? 'pg-user' : 'pg-paige'}`);
-      if (turn.role === 'user') { node.textContent = turn.content; node.style.setProperty('--pg-tilt', ['.6deg', '-.5deg', '.3deg'][index % 3]); }
+      if (turn.role === 'user') {
+        if (turn.picture) node.append(pictureImg(turn.picture.id, 'pg-pic', 'Your picture'));
+        if (turn.content) node.append(document.createTextNode(turn.content));
+        node.style.setProperty('--pg-tilt', ['.6deg', '-.5deg', '.3deg'][index % 3]);
+      }
       else {
         message(node, turn.content);
         if (turn.saved?.length) node.append(el('div', turn.saved.join(', ') + (session!.card && turn.at > session!.card.savedAt ? '. It’s in your notebook, not on the card yet.' : '. It’s in your notebook.'), 'pg-saved'));
@@ -806,6 +881,16 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       log.append(node);
     });
     log.scrollTop = toBottom || (wasBottom && !keepReading) ? log.scrollHeight : keep;
+  }
+
+  /** Pictures from this chat, fetched once and kept for showing. */
+  const pictureUrls = new Map<string, string>();
+  function pictureImg(id: string, cls: string, alt: string): HTMLImageElement {
+    const img = el('img', undefined, cls); img.alt = alt; img.loading = 'lazy';
+    const known = pictureUrls.get(id);
+    if (known) img.src = known;
+    else if (!id.startsWith('local-')) void rpc.request<{ mime: string; data: string }>('picture', { id }).then(p => { const url = `data:${p.mime};base64,${p.data}`; pictureUrls.set(id, url); img.src = url; }).catch(() => { img.alt = 'Picture not found'; });
+    return img;
   }
 
   /** A lasting note under a reply that ended before Paige finished, so it can't be missed. */
@@ -985,6 +1070,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     makeButton.textContent = fixing ? (copyBox.checked ? 'Save the copy' : `Update “${fixing.name}”`) : session?.card ? `Update “${session.card.name}”` : 'Make my card';
     renderFixBar();
     renderUnsaved(blocks);
+    renderCardPics();
     resendButton.hidden = !session?.card;
     const count = blocks.filter(b => b.type !== 'First message').length;
     tabButtons.sheet.textContent = count ? `Notebook (${count})` : 'Notebook';
@@ -1043,4 +1129,22 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
   return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); const openModal = modal; modal = null; openModal?.dismiss(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+}
+
+/** Shrinks a picture to at most 1280 pixels on its long side as a JPEG, so it's quick to send and store. */
+async function shrink(file: File): Promise<{ data: string; mime: PictureMime; url: string }> {
+  const source = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = source;
+    await img.decode();
+    const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const url = canvas.toDataURL('image/jpeg', 0.86);
+    return { data: url.slice(url.indexOf(',') + 1), mime: 'image/jpeg', url };
+  } finally { URL.revokeObjectURL(source); }
 }
