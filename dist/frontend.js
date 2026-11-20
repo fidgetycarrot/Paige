@@ -185,6 +185,8 @@ ${parts.join(`
 
 // src/contracts.ts
 var ABOUT_MAX = 1500;
+var REACHES = ["recent", "more", "lots", "all"];
+var REACH_NAMES = { recent: "Recent", more: "More", lots: "A lot", all: "Whole chat" };
 
 // src/perspective.ts
 var POVS = ["3rd-limited", "3rd-close", "2nd", "1st"];
@@ -886,9 +888,18 @@ function setup(ctx, options = {}) {
   const chatPick = el("select");
   chatPick.setAttribute("aria-label", "Which chat Paige reads");
   chatPick.hidden = true;
+  const reachPick = el("select");
+  reachPick.setAttribute("aria-label", "How far back Paige reads");
+  reachPick.hidden = true;
+  reachPick.title = "How far back Paige reads. Further back costs more on every message.";
+  for (const r of REACHES) {
+    const o = el("option", REACH_NAMES[r]);
+    o.value = r;
+    reachPick.append(o);
+  }
   const readNote = el("div", "", "pg-note pg-fix-note");
   const fixLine = el("div", undefined, "pg-fix-line");
-  fixLine.append(fixTitle, readRow, chatPick);
+  fixLine.append(fixTitle, readRow, chatPick, reachPick);
   fixBar.append(fixLine, readNote);
   views.chat.append(fixBar, log, compose);
   const grow = () => {
@@ -1782,6 +1793,8 @@ function setup(ctx, options = {}) {
     const rp = session?.roleplay;
     readBox.checked = !!rp?.on;
     chatPick.hidden = !rp?.on;
+    reachPick.hidden = !rp?.on;
+    reachPick.value = rp?.reach ?? "recent";
     if (!rp?.on)
       readNote.textContent = "Off: Paige only knows what you tell her. On, she reads the end of one of this card’s chats with every message, which costs more.";
   }
@@ -1793,13 +1806,14 @@ function setup(ctx, options = {}) {
       return o;
     }));
   }
-  async function setReading(on, chatId = "") {
-    const result = await rpc.request("setRoleplay", { on, chatId });
+  async function setReading(on, chatId = "", reach = reachPick.value) {
+    const result = await rpc.request("setRoleplay", { on, chatId, reach });
     session = result.session;
     renderFixBar();
     const trackers = result.cleaned === null ? " Grant Paige the regex_scripts permission in Extensions and she’ll leave out trackers the way your main chat does, so she can read further back." : result.cleaned ? " Trackers your preset leaves out of the main chat are left out here too." : "";
+    const all = session.roleplay?.reach === "all" ? "all" : `the last ${result.count}`;
     if (on)
-      readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} Switch it off when she’s seen enough.`;
+      readNote.textContent = `Paige reads ${all} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} ${session.roleplay?.reach === "recent" ? "Switch it off when she’s seen enough." : "That’s on every message, so drop back to Recent when she’s seen enough."}`;
   }
   readBox.addEventListener("change", () => void act(async () => {
     if (!readBox.checked) {
@@ -1817,6 +1831,7 @@ function setup(ctx, options = {}) {
     await setReading(true, keep);
   }));
   chatPick.addEventListener("change", () => void act(() => setReading(true, chatPick.value)));
+  reachPick.addEventListener("change", () => void act(() => setReading(true, session?.roleplay?.chatId || chatPick.value)));
   function renderSheet() {
     const open = new Set([...pieces.querySelectorAll("details[open]")].map((d) => d.dataset.id));
     pieces.replaceChildren();

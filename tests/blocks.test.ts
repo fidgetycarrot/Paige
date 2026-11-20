@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { labelOf, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
-import { aboutMeText, appNotes, buildMessages, promptCleaner, greeting, paigeRules } from '../src/prompt';
+import { aboutMeText, appNotes, buildMessages, promptCleaner, roleplayText, greeting, paigeRules } from '../src/prompt';
 
 const reply = `*She slides the clipboard over.* "Done. Here's Mara."
 
@@ -281,4 +281,10 @@ describe('roleplay cleanup', () => {
     expect(clean('She waits.<sola_hud mood="x">Bond: 4\nHP: 9</sola_hud> old', false)).toBe('She waits. old');
     expect(clean('OOC hi <sola_hud></sola_hud>', true)).toBe(' hi <sola_hud></sola_hud>');
   });
+});
+
+test('how far back Paige reads is a character budget', () => {
+  const messages = Array.from({ length: 60 }, (_, i) => ({ name: 'N', isUser: false, content: 'x'.repeat(1000) + i }));
+  expect(roleplayText('c', messages).count).toBeLessThan(25);
+  expect(roleplayText('c', messages, 1_000_000).count).toBe(60);
 });

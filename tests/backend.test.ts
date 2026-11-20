@@ -310,6 +310,10 @@ describe('Paige backend', () => {
     expect(await host.call<unknown[]>('listChats')).toEqual([{ id: 'ch1', name: 'Night one', updatedAt: 9 }]);
     const rp = await host.call<{ count: number; words: number }>('setRoleplay', { on: true, chatId: 'ch1' });
     expect(rp.count).toBe(2);
+    const further = await host.call<{ session: { roleplay: { reach: string } } }>('setRoleplay', { on: true, chatId: 'ch1', reach: 'all' });
+    expect(further.session.roleplay.reach).toBe('all');
+    // Picking another chat keeps how far back she reads.
+    expect((await host.call<{ session: { roleplay: { reach: string } } }>('setRoleplay', { on: true, chatId: 'ch1' })).session.roleplay.reach).toBe('all');
     await host.call('send', { text: 'She forgives me way too fast.' });
     const prompt = (host.requests.at(-1) as { messages: { content: string }[] }).messages[0].content;
     expect(prompt).toContain('Fixing mode');

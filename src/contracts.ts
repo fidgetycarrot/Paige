@@ -40,8 +40,13 @@ export interface Session {
   /** Set when the notebook is a card brought back to Paige for fixes. */
   source?: CardSource;
   /** Let Paige read the end of one of that card's chats with every message. Off unless switched on. */
-  roleplay?: { on: boolean; chatId: string; chatName: string };
+  roleplay?: { on: boolean; chatId: string; chatName: string; reach?: Reach };
 }
+/** How far back Paige reads the roleplay, in characters of story (trackers taken out first). */
+export type Reach = 'recent' | 'more' | 'lots' | 'all';
+export const REACHES: Reach[] = ['recent', 'more', 'lots', 'all'];
+export const REACH_BUDGET: Record<Reach, number> = { recent: 24_000, more: 70_000, lots: 170_000, all: 1_000_000 };
+export const REACH_NAMES: Record<Reach, string> = { recent: 'Recent', more: 'More', lots: 'A lot', all: 'Whole chat' };
 export interface CardListItem { id: string; name: string; updatedAt: number; paige: boolean }
 export interface ChatListItem { id: string; name: string; updatedAt: number }
 export interface Snapshot {

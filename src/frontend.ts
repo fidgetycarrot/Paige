@@ -1,6 +1,6 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
 import { BLOCK_TYPES, isRemember, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
-import { ABOUT_MAX } from './contracts';
+import { ABOUT_MAX, REACH_NAMES, REACHES } from './contracts';
 import type { PictureMime } from './contracts';
 import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Settings, Snapshot } from './contracts';
 import { FALLBACK_POV, POV_NAMES, POVS, type PovSetting } from './perspective';
@@ -466,8 +466,11 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const readBox = el('input'); readBox.type = 'checkbox';
   const readRow = el('label', undefined, 'pg-fix-read'); readRow.append(readBox, el('span', 'Let Paige read the roleplay'));
   const chatPick = el('select'); chatPick.setAttribute('aria-label', 'Which chat Paige reads'); chatPick.hidden = true;
+  const reachPick = el('select'); reachPick.setAttribute('aria-label', 'How far back Paige reads'); reachPick.hidden = true;
+  reachPick.title = 'How far back Paige reads. Further back costs more on every message.';
+  for (const r of REACHES) { const o = el('option', REACH_NAMES[r]); o.value = r; reachPick.append(o); }
   const readNote = el('div', '', 'pg-note pg-fix-note');
-  const fixLine = el('div', undefined, 'pg-fix-line'); fixLine.append(fixTitle, readRow, chatPick);
+  const fixLine = el('div', undefined, 'pg-fix-line'); fixLine.append(fixTitle, readRow, chatPick, reachPick);
   fixBar.append(fixLine, readNote);
   views.chat.append(fixBar, log, compose);
   const grow = () => { box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`; };
@@ -1034,21 +1037,22 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     fixTitle.textContent = `Fixing “${source.name}”`;
     const rp = session?.roleplay;
     readBox.checked = !!rp?.on;
-    chatPick.hidden = !rp?.on;
+    chatPick.hidden = !rp?.on; reachPick.hidden = !rp?.on; reachPick.value = rp?.reach ?? 'recent';
     if (!rp?.on) readNote.textContent = 'Off: Paige only knows what you tell her. On, she reads the end of one of this card’s chats with every message, which costs more.';
   }
   async function loadChats() {
     chats = await rpc.request<ChatListItem[]>('listChats');
     chatPick.replaceChildren(...chats.map(c => { const o = el('option', `${c.name} · ${new Date(c.updatedAt * (c.updatedAt < 1e12 ? 1000 : 1)).toLocaleDateString()}`); o.value = c.id; return o; }));
   }
-  async function setReading(on: boolean, chatId = '') {
-    const result = await rpc.request<{ session: Session; words: number; count: number; cleaned: number | null }>('setRoleplay', { on, chatId });
+  async function setReading(on: boolean, chatId = '', reach = reachPick.value) {
+    const result = await rpc.request<{ session: Session; words: number; count: number; cleaned: number | null }>('setRoleplay', { on, chatId, reach });
     session = result.session;
     renderFixBar();
     const trackers = result.cleaned === null
       ? ' Grant Paige the regex_scripts permission in Extensions and she’ll leave out trackers the way your main chat does, so she can read further back.'
       : result.cleaned ? ' Trackers your preset leaves out of the main chat are left out here too.' : '';
-    if (on) readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} Switch it off when she’s seen enough.`;
+    const all = session.roleplay?.reach === 'all' ? 'all' : `the last ${result.count}`;
+    if (on) readNote.textContent = `Paige reads ${all} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} ${session.roleplay?.reach === 'recent' ? 'Switch it off when she’s seen enough.' : 'That’s on every message, so drop back to Recent when she’s seen enough.'}`;
   }
   readBox.addEventListener('change', () => void act(async () => {
     if (!readBox.checked) { await setReading(false); return; }
@@ -1059,6 +1063,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     await setReading(true, keep);
   }));
   chatPick.addEventListener('change', () => void act(() => setReading(true, chatPick.value)));
+  reachPick.addEventListener('change', () => void act(() => setReading(true, session?.roleplay?.chatId || chatPick.value)));
 
   function renderSheet() {
     const open = new Set([...pieces.querySelectorAll<HTMLDetailsElement>('details[open]')].map(d => d.dataset.id));

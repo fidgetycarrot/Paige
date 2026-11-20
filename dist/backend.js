@@ -691,7 +691,7 @@ function promptCleaner(scripts) {
     clean: (text, isUser) => compiled.reduce((out, s) => (isUser ? s.user : s.ai) ? out.replace(s.re, s.replace) : out, text)
   };
 }
-function roleplayText(chatName, messages) {
+function roleplayText(chatName, messages, budget = ROLEPLAY_BUDGET) {
   const lines = [];
   let used = 0;
   for (let i = messages.length - 1;i >= 0; i--) {
@@ -702,7 +702,7 @@ function roleplayText(chatName, messages) {
     if (!content)
       continue;
     const line = `${m.isUser ? `${m.name || "Player"} ({{user}})` : m.name || "Narrator"}: ${content.length > 4000 ? `${content.slice(0, 4000)}\u2026` : content}`;
-    if (used + line.length > ROLEPLAY_BUDGET && lines.length)
+    if (used + line.length > budget && lines.length)
       break;
     lines.unshift(line);
     used += line.length;
@@ -958,6 +958,8 @@ var THINKING = ["light", "off", "inherit"];
 var ABOUT_MAX = 1500;
 var PICTURE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 var PICTURE_MAX_BYTES = 3000000;
+var REACHES = ["recent", "more", "lots", "all"];
+var REACH_BUDGET = { recent: 24000, more: 70000, lots: 170000, all: 1e6 };
 var record = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
 function text(v, label, max) {
   if (typeof v !== "string" || v.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))
@@ -1154,7 +1156,7 @@ function readSession(value) {
     blocks,
     ...Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: "x", turns: [], blocks: v.undo }).blocks } : {},
     ...typeof src.characterId === "string" ? { source: { characterId: src.characterId, name: String(src.name ?? ""), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...typeof src.paigeBookId === "string" ? { paigeBookId: src.paigeBookId } : {} } } : {},
-    ...typeof rp.chatId === "string" ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? "") } } : {},
+    ...typeof rp.chatId === "string" ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? ""), ...REACHES.includes(rp.reach) ? { reach: rp.reach } : {} } } : {},
     ...typeof card.characterId === "string" ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ""), personaId: typeof card.personaId === "string" ? card.personaId : undefined, name: String(card.name ?? ""), savedAt: Number(card.savedAt) || 0 } } : {}
   };
 }
@@ -1408,7 +1410,8 @@ function setupBackend(api) {
           const chat = await api.chats.get(chatId, userId);
           if (!chat || chat.character_id !== current.source.characterId)
             throw new Error("That chat isn\u2019t one of this card\u2019s chats.");
-          current.roleplay = { on: true, chatId, chatName: chat.name || "Untitled chat" };
+          const reach = REACHES.includes(input.reach) ? input.reach : current.roleplay?.reach ?? "recent";
+          current.roleplay = { on: true, chatId, chatName: chat.name || "Untitled chat", reach };
           const preview = await readRoleplay(current);
           await persist();
           broadcast();
@@ -1724,7 +1727,7 @@ ${body}` }],
         }
         const scripts = api.permissions.has("regex_scripts") ? await Promise.resolve().then(() => api.regex_scripts.getActive({ target: "prompt", chatId: rp.chatId, characterId: current.source?.characterId, userId })).catch(() => null) : null;
         const cleaner = promptCleaner(scripts ?? []);
-        const result = roleplayText(rp.chatName, messages.filter((m) => m.role !== "system").map((m) => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? "", m.is_user) })));
+        const result = roleplayText(rp.chatName, messages.filter((m) => m.role !== "system").map((m) => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? "", m.is_user) })), REACH_BUDGET[rp.reach ?? "recent"]);
         return { ...result, words: result.text.split(/\s+/).length, cleaned: scripts ? cleaner.count : null };
       }
       async function saveFixes(current, asCopy, copyName, looks) {

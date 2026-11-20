@@ -4,6 +4,7 @@ import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
 import { promptCleaner } from './prompt';
+import { REACH_BUDGET, REACHES, type Reach } from './contracts';
 import { ABOUT_MAX, PICTURE_MAX_BYTES, PICTURE_MIMES, record, type PictureMime, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 import { uuid } from './safe-id';
 import { DETECT_SYSTEM, FALLBACK_POV, parseDetection, perspectiveRule, POV_NAMES, POV_SETTINGS, POVS, presetText, type Pov, type PovSetting } from './perspective';
@@ -79,7 +80,7 @@ function readSession(value: unknown): Session | null {
     version: 1, id: v.id, mode: v.mode === 'quick' ? 'quick' : 'full', startedAt: Number(v.startedAt) || Date.now(), turns: turns.length ? turns : freshSession('full').turns, blocks,
     ...(Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: 'x', turns: [], blocks: v.undo })!.blocks } : {}),
     ...(typeof src.characterId === 'string' ? { source: { characterId: src.characterId, name: String(src.name ?? ''), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...(typeof src.paigeBookId === 'string' ? { paigeBookId: src.paigeBookId } : {}) } } : {}),
-    ...(typeof rp.chatId === 'string' ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? '') } } : {}),
+    ...(typeof rp.chatId === 'string' ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? ''), ...(REACHES.includes(rp.reach as Reach) ? { reach: rp.reach as Reach } : {}) } } : {}),
     ...(typeof card.characterId === 'string' ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ''), personaId: typeof card.personaId === 'string' ? card.personaId : undefined, name: String(card.name ?? ''), savedAt: Number(card.savedAt) || 0 } } : {}),
   };
 }
@@ -282,7 +283,8 @@ export function setupBackend(api: SpindleAPI) {
           if (!chatId) throw new Error('Pick which chat Paige should read.');
           const chat = await api.chats.get(chatId, userId);
           if (!chat || chat.character_id !== current.source.characterId) throw new Error('That chat isn’t one of this card’s chats.');
-          current.roleplay = { on: true, chatId, chatName: chat.name || 'Untitled chat' };
+          const reach: Reach = REACHES.includes(input.reach as Reach) ? input.reach as Reach : current.roleplay?.reach ?? 'recent';
+          current.roleplay = { on: true, chatId, chatName: chat.name || 'Untitled chat', reach };
           const preview = await readRoleplay(current);
           await persist(); broadcast();
           return { session: current, words: preview.words, count: preview.count, cleaned: preview.cleaned };
@@ -534,7 +536,7 @@ export function setupBackend(api: SpindleAPI) {
           ? await Promise.resolve().then(() => api.regex_scripts.getActive({ target: 'prompt', chatId: rp.chatId, characterId: current.source?.characterId, userId })).catch(() => null)
           : null;
         const cleaner = promptCleaner(scripts ?? []);
-        const result = roleplayText(rp.chatName, messages.filter(m => m.role !== 'system').map(m => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? '', m.is_user) })));
+        const result = roleplayText(rp.chatName, messages.filter(m => m.role !== 'system').map(m => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? '', m.is_user) })), REACH_BUDGET[rp.reach ?? 'recent']);
         return { ...result, words: result.text.split(/\s+/).length, cleaned: scripts ? cleaner.count : null };
       }
 

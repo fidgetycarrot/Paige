@@ -220,7 +220,7 @@ export function promptCleaner(scripts: PromptScript[]): { clean: (text: string, 
     clean: (text, isUser) => compiled.reduce((out, s) => (isUser ? s.user : s.ai) ? out.replace(s.re, s.replace) : out, text),
   };
 }
-export function roleplayText(chatName: string, messages: { name: string; isUser: boolean; content: string }[]): { text: string; count: number } {
+export function roleplayText(chatName: string, messages: { name: string; isUser: boolean; content: string }[], budget = ROLEPLAY_BUDGET): { text: string; count: number } {
   const lines: string[] = [];
   let used = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -228,7 +228,7 @@ export function roleplayText(chatName: string, messages: { name: string; isUser:
     const content = m.content.replace(/<[^>]{1,200}>/g, '').replace(/\n{3,}/g, '\n\n').trim();
     if (!content) continue;
     const line = `${m.isUser ? `${m.name || 'Player'} ({{user}})` : m.name || 'Narrator'}: ${content.length > 4000 ? `${content.slice(0, 4000)}…` : content}`;
-    if (used + line.length > ROLEPLAY_BUDGET && lines.length) break;
+    if (used + line.length > budget && lines.length) break;
     lines.unshift(line); used += line.length;
   }
   return { text: `### The roleplay: "${chatName}" (last ${lines.length} messages, oldest first)\n<roleplay>\n${lines.join('\n\n')}\n</roleplay>`, count: lines.length };
