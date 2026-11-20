@@ -1,7 +1,7 @@
 import { uuid } from './safe-id';
 /** Reading Paige's finished blocks out of her replies, keeping the Sheet, and laying the Sheet out as a card. No host calls here. */
 
-export const BLOCK_TYPES = ['Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message'] as const;
+export const BLOCK_TYPES = ['Narrator', 'Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message'] as const;
 export type BlockType = typeof BLOCK_TYPES[number];
 export type Mode = 'full' | 'quick';
 export const LORE_TYPES: BlockType[] = ['Location', 'Item', 'Faction', 'History', 'Concept'];
@@ -27,6 +27,7 @@ export interface BlockSource { field?: CardField; entryId?: string; bookId?: str
 
 const LABELS: Record<string, BlockType> = {
   'main character': 'Main character', 'main': 'Main character', 'character': 'Main character',
+  'narrator': 'Narrator', 'narrator card': 'Narrator', 'game master': 'Narrator',
   'side character': 'Side character', 'side': 'Side character', 'npc': 'Side character',
   'scenario': 'Scenario',
   'location': 'Location', 'item': 'Item', 'faction': 'Faction', 'history': 'History', 'history event': 'History', 'event': 'History', 'concept': 'Concept',
@@ -219,14 +220,31 @@ export interface CardPlan {
 }
 
 /** Where each piece goes, as Paige's Job section says: main character in the description, scenario in the scenario field, everyone and everything else in the lorebook. */
+/** On a narrator card, the people in the story, one line each, always on so the narrator knows who exists. Full entries load when they come up. */
+export const CAST_LABEL = '[Cast]';
+export function castList(blocks: Block[]): string {
+  const people = blocks.filter(b => b.type === 'Main character' || b.type === 'Side character');
+  if (!people.length) return '';
+  const line = (b: Block) => {
+    const what = b.type === 'Main character' ? fieldOf(b.body, 'Occupation') || fieldOf(b.body, 'Goal') : fieldOf(b.body, 'Role');
+    const why = b.type === 'Side character' ? fieldOf(b.body, 'Why they show up') : '';
+    return `- ${b.name}${what ? `: ${what.replace(/\.$/, '')}` : ''}${why ? `. ${why.replace(/\.$/, '')}` : ''}.`;
+  };
+  return `${CAST_LABEL}\nEveryone in this story. Each person's full entry loads when they come up.\n${people.map(line).join('\n')}`;
+}
+
 export function planCard(blocks: Block[], options: { name?: string } = {}): CardPlan {
   const of = (type: BlockType) => blocks.filter(b => b.type === type);
-  const mains = of('Main character'), scenarios = of('Scenario'), notes: string[] = [];
-  const name = (options.name?.trim() || mains[0]?.name || fieldOf(scenarios[0]?.body ?? '', 'Location') || 'New story').slice(0, 120);
-  if (!mains.length) notes.push('There is no main character, so the card description says what the story is instead.');
+  const mains = of('Main character'), scenarios = of('Scenario'), narrators = of('Narrator'), notes: string[] = [];
+  const name = (options.name?.trim() || narrators[0]?.name || mains[0]?.name || fieldOf(scenarios[0]?.body ?? '', 'Location') || 'New story').slice(0, 120);
+  if (!mains.length && !narrators.length) notes.push('There is no main character or narrator, so the card description says what the story is instead.');
+  if (narrators.length > 1) notes.push('There is more than one narrator; only the first one is used.');
   const entries: EntryPlan[] = [];
-  // A second main character can't share the description, so it rides in the lorebook, always on.
-  for (const extra of mains.slice(1)) entries.push({ comment: `Main character · ${extra.name}`, key: [extra.name, ...listOf(fieldOf(extra.body, 'Aliases'))], content: `[Main character]\n${extra.body}`, constant: true });
+  // On a narrator card the narrator is the description and everyone knows the cast; otherwise the first main character is.
+  const cast = narrators.length ? castList(blocks) : '';
+  if (cast) entries.push({ comment: 'Cast list', key: [], content: cast, constant: true });
+  // A main character who isn't in the description rides in the lorebook, always on.
+  for (const extra of narrators.length ? mains : mains.slice(1)) entries.push({ comment: `Main character · ${extra.name}`, key: [extra.name, ...listOf(fieldOf(extra.body, 'Aliases'))], content: `[Main character]\n${extra.body}`, constant: true });
   for (const extra of scenarios.slice(1)) entries.push({ comment: 'Scenario (more)', key: [], content: `[Scenario]\n${extra.body}`, constant: true });
   for (const side of of('Side character')) {
     entries.push({ comment: `Side character · ${side.name}`, key: [side.name, ...listOf(fieldOf(side.body, 'Aliases'))].slice(0, 12), content: `[Side character]\n${side.body}`, constant: false });
@@ -238,7 +256,7 @@ export function planCard(blocks: Block[], options: { name?: string } = {}): Card
   }
   const firsts = of('First message').filter(b => b.keep !== false).map(b => b.body.trim()).filter(Boolean);
   if (!firsts.length) notes.push('No first message is kept, so the chat will start empty.');
-  const description = mains[0]?.body.trim() ?? [`${name}`, scenarios[0] ? 'The story is set out in the scenario. Characters and lore are in the lorebook.' : 'Characters and lore are in the lorebook.'].join('\n\n');
+  const description = narrators[0] ? `[Narrator]\n${narrators[0].body.trim()}` : mains[0]?.body.trim() ?? [`${name}`, scenarios[0] ? 'The story is set out in the scenario. Characters and lore are in the lorebook.' : 'Characters and lore are in the lorebook.'].join('\n\n');
   const personaBlock = of('Persona')[0];
   // The persona is the player's own character: it needs a real name, and {{user}} in its text becomes that name.
   const realName = personaBlock ? personaName(personaBlock) : '';

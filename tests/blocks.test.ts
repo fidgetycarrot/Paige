@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { labelOf, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
+import { castList, labelOf, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
 import { aboutMeText, appNotes, buildMessages, promptCleaner, roleplayText, greeting, paigeRules } from '../src/prompt';
 
 const reply = `*She slides the clipboard over.* "Done. Here's Mara."
@@ -182,7 +182,8 @@ describe('Paige prompt', () => {
     expect(text).toContain('taped into your notebook');
     expect(text).not.toContain('blank preset');
     expect(text).not.toContain('Little note');
-    expect(text).toContain('Then give me the pitch in a few sentences.');
+    expect(text).toContain('I’ll tell you what shape it wants'.replace('’', "'"));
+    expect(text).not.toContain('What are we building first?');
     expect(greeting('quick')).toContain('Quick mode');
   });
   test('messages: rules, sheet, history, reminder last', () => {
@@ -287,4 +288,35 @@ test('how far back Paige reads is a character budget', () => {
   const messages = Array.from({ length: 60 }, (_, i) => ({ name: 'N', isUser: false, content: 'x'.repeat(1000) + i }));
   expect(roleplayText('c', messages).count).toBeLessThan(25);
   expect(roleplayText('c', messages, 1_000_000).count).toBe(60);
+});
+
+describe('narrator cards', () => {
+  const b = (type: string, name: string, body: string) => ({ id: name, type: type as never, name, body: `Name: ${name}\n${body}`, updatedAt: 0 });
+  const blocks = [
+    b('Narrator', 'The Long Road', '## Role\nThe narrator of the Long Road.'),
+    b('Side character', 'Mara', '## Identity\nRole: ferry captain\n## Function in the story\nWhy they show up: she owns the only boat.'),
+    b('Side character', 'Ash', '## Identity\nRole: bounty hunter'),
+    b('Main character', 'Jory', '## Identity\nOccupation: harbor pilot'),
+  ];
+  test('the narrator is the description, everyone is in the lorebook, and the cast list is always on', () => {
+    const plan = planCard(blocks);
+    expect(plan.card.name).toBe('The Long Road');
+    expect(plan.card.description.startsWith('[Narrator]\nName: The Long Road')).toBe(true);
+    const cast = plan.entries.find(e => e.comment === 'Cast list')!;
+    expect(cast.constant).toBe(true);
+    expect(cast.content).toBe(castList(blocks));
+    expect(cast.content).toContain('- Mara: ferry captain. she owns the only boat.');
+    expect(cast.content).toContain('- Jory: harbor pilot.');
+    expect(plan.entries.some(e => e.comment === 'Main character · Jory' && e.constant)).toBe(true);
+  });
+  test('Paige knows how to build one, and keeps her voice', () => {
+    const system = String(buildMessages({ mode: 'full', blocks: [], turns: [] })[0].content);
+    expect(system).toContain('### Section notes: Narrator');
+    expect(system).toContain('Then call the card\'s shape yourself');
+    expect(system).toContain('Scenario, Threads in motion:');
+    expect(system).toContain('It ends on two or three lanes inside the scene');
+    expect(system).toContain('explain it in your own voice');
+    expect(system).toContain('Secret (not known yet):');
+    expect(system).not.toContain('what to build first (menu:');
+  });
 });

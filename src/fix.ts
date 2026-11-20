@@ -1,5 +1,5 @@
 /** Bringing a card back to Paige: card → notebook pieces, and the notebook's changes → back to the card. No host calls here. */
-import { fieldOf, LORE_TYPES, listOf, personaName, PLAYER_RULE, withoutAddedName, type Block, type BlockType, type CardField, type EntryPlan } from './blocks';
+import { CAST_LABEL, castList, fieldOf, LORE_TYPES, listOf, personaName, PLAYER_RULE, withoutAddedName, type Block, type BlockType, type CardField, type EntryPlan } from './blocks';
 import { uuid } from './safe-id';
 
 /** The card fields Paige can fix besides the description and scenario, with the names she uses for them. */
@@ -20,6 +20,8 @@ export interface CardSource {
   characterId: string; name: string; bookIds: string[]; entryIds: string[]; greetings: string[];
   /** The lorebook Paige adds new entries to, once there is one. */
   paigeBookId?: string;
+  /** A narrator card's cast list entry, which Paige keeps up to date herself, and its text when it was brought. */
+  castEntryId?: string; cast?: string;
   /** Entries left out because the lorebook was very big; they stay as they are. */
   skipped: number;
   broughtAt: number;
@@ -37,12 +39,16 @@ export function cardToBlocks(card: CardIn, entries: EntryIn[], id: () => string 
     if (!text) return;
     blocks.push({ id: id(), type, name: name.trim().slice(0, 120) || type, body: text, updatedAt: now, origin: text, ...extra });
   };
-  add('Main character', fieldOf(card.description, 'Name') || card.name, card.description, { source: { field: 'description' } });
+  const narrator = /^\s*\[Narrator\]\s*\n/.exec(card.description ?? '');
+  if (narrator) add('Narrator', fieldOf(card.description, 'Name') || card.name, card.description.slice(narrator[0].length), { source: { field: 'description' } });
+  else add('Main character', fieldOf(card.description, 'Name') || card.name, card.description, { source: { field: 'description' } });
   add('Scenario', 'Scenario', card.scenario, { source: { field: 'scenario' } });
   for (const [field, label] of Object.entries(FIELD_NAMES) as [CardField, string][]) add('Card field', label, String(card[field as keyof CardIn] ?? ''), { source: { field } });
   const greetings = [card.first_mes, ...(card.alternate_greetings ?? [])].map(g => (g ?? '').replace(/\r/g, '').trim()).filter(Boolean);
   greetings.forEach((g, i) => add('First message', `First message ${i + 1}`, g, { keep: true }));
-  const live = entries.filter(e => !e.disabled);
+  // The cast list isn't a piece: Paige rebuilds it from the people in the notebook.
+  const castEntry = entries.find(e => !e.disabled && !!e.extensions?.paige && e.content.startsWith(CAST_LABEL));
+  const live = entries.filter(e => !e.disabled && e !== castEntry);
   const used = live.slice(0, MAX_ENTRIES);
   for (const entry of used) {
     const mine = !!entry.extensions?.paige && PAIGE_LABEL.test(entry.content);
@@ -60,7 +66,7 @@ export function cardToBlocks(card: CardIn, entries: EntryIn[], id: () => string 
   const paigeBook = entries.find(e => e.extensions?.paige)?.world_book_id;
   return {
     blocks,
-    source: { characterId: card.id, name: card.name, bookIds: [...card.world_book_ids], entryIds: used.map(e => e.id), greetings, skipped: live.length - used.length, broughtAt: now, ...(paigeBook ? { paigeBookId: paigeBook } : {}) },
+    source: { characterId: card.id, name: card.name, bookIds: [...card.world_book_ids], entryIds: used.map(e => e.id), greetings, skipped: live.length - used.length, broughtAt: now, ...(paigeBook ? { paigeBookId: paigeBook } : {}), ...(castEntry ? { castEntryId: castEntry.id, cast: castEntry.content } : {}) },
   };
 }
 
@@ -107,11 +113,18 @@ export function planFix(blocks: Block[], source: CardSource): FixPlan {
   // Card fields
   for (const field of ['description', 'scenario', ...Object.keys(FIELD_NAMES)] as CardField[]) {
     const block = fromField(field);
-    if (block && changed(block)) { patch[field] = withoutAddedName(block); summary.push(`card ${field === 'description' ? 'description' : field === 'scenario' ? 'scenario' : FIELD_NAMES[field as keyof typeof FIELD_NAMES].toLowerCase()}`); }
+    if (block && changed(block)) { patch[field] = block.type === 'Narrator' ? `[Narrator]\n${withoutAddedName(block)}` : withoutAddedName(block); summary.push(`card ${field === 'description' ? 'description' : field === 'scenario' ? 'scenario' : FIELD_NAMES[field as keyof typeof FIELD_NAMES].toLowerCase()}`); }
   }
   const hadDescription = !!fromField('description'), hadScenario = !!fromField('scenario');
   for (const block of blocks.filter(b => !b.source)) {
-    if (block.type === 'Main character') {
+    if (block.type === 'Narrator') {
+      // A new narrator takes over the description; a main character who was there moves to an always-on entry.
+      if (patch.description === undefined || fromField('description')?.type !== 'Narrator') {
+        const was = fromField('description');
+        patch.description = `[Narrator]\n${block.body.trim()}`; summary.push('card description (now a narrator card)');
+        if (was?.type === 'Main character') { create.push(entryFor({ ...was, body: withoutAddedName(was) })); summary.push(`new lorebook entry: ${was.name}`); }
+      } else notes.push('There is already a narrator, so the second one was left out.');
+    } else if (block.type === 'Main character') {
       if (!hadDescription && patch.description === undefined) { patch.description = block.body.trim(); summary.push('card description'); }
       else { create.push(entryFor(block)); summary.push(`new lorebook entry: ${block.name}`); }
     } else if (block.type === 'Scenario') {
@@ -139,6 +152,13 @@ export function planFix(blocks: Block[], source: CardSource): FixPlan {
     if (changed(block)) { updates.push({ entryId, plan: entryFor(block) }); summary.push(`lorebook entry: ${block.name}`); }
   }
   const disable = source.entryIds.filter(id => !present.has(id));
+  // A narrator card's cast list follows the people in the notebook.
+  if (blocks.some(b => b.type === 'Narrator')) {
+    const cast = castList(blocks);
+    const plan: EntryPlan = { comment: 'Cast list', key: [], content: cast, constant: true };
+    if (source.castEntryId) { if (cast && cast !== source.cast) { updates.push({ entryId: source.castEntryId, plan }); summary.push('cast list'); } }
+    else if (cast) { create.push(plan); summary.push('new lorebook entry: cast list'); }
+  }
   if (disable.length) summary.push(`${disable.length} lorebook ${disable.length === 1 ? 'entry' : 'entries'} switched off`);
   // Persona, made the same way as for a new card
   const personaBlock = blocks.find(b => b.type === 'Persona');

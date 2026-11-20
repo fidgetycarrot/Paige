@@ -1102,7 +1102,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
       for (const block of group) { const node = piece(block); node.dataset.id = block.id; if (open.has(block.id)) node.open = true; section.append(node); }
       pieces.append(section);
     }
-    const main = blocks.find(b => b.type === 'Main character');
+    const main = blocks.find(b => b.type === 'Narrator') ?? blocks.find(b => b.type === 'Main character');
     cardName.placeholder = main?.name || 'Name the card';
     if (!cardName.value && session?.card?.name) cardName.value = session.card.name;
     const fixing = session?.source;

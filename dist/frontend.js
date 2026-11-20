@@ -84,12 +84,15 @@ var K = new Uint32Array([
 ]);
 
 // src/blocks.ts
-var BLOCK_TYPES = ["Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message"];
+var BLOCK_TYPES = ["Narrator", "Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message"];
 var LORE_TYPES = ["Location", "Item", "Faction", "History", "Concept"];
 var LABELS = {
   "main character": "Main character",
   main: "Main character",
   character: "Main character",
+  narrator: "Narrator",
+  "narrator card": "Narrator",
+  "game master": "Narrator",
   "side character": "Side character",
   side: "Side character",
   npc: "Side character",
@@ -1883,7 +1886,7 @@ function setup(ctx, options = {}) {
       }
       pieces.append(section);
     }
-    const main = blocks.find((b) => b.type === "Main character");
+    const main = blocks.find((b) => b.type === "Narrator") ?? blocks.find((b) => b.type === "Main character");
     cardName.placeholder = main?.name || "Name the card";
     if (!cardName.value && session?.card?.name)
       cardName.value = session.card.name;

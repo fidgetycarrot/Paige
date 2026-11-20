@@ -19,7 +19,7 @@ export const FALLBACK_POV: Pov = '3rd-limited';
 /** The rule Paige follows when she writes or rewrites a first message. */
 export function perspectiveRule(pov: Pov, from: string): string {
   const how: Record<Pov, string> = {
-    '3rd-limited': `Third person, limited: narrate the main character and everyone else as he/she/they, from the outside. Show only what can be seen and heard: what they say, do, and visibly show. Never narrate the main character's private thoughts or feelings directly, and never hint at what they're secretly thinking. Refer to {{user}} by name.`,
+    '3rd-limited': `Third person, limited: narrate the main character (on a narrator card, every character) and everyone else as he/she/they, from the outside. Show only what can be seen and heard: what they say, do, and visibly show. Never narrate the main character's private thoughts or feelings directly, and never hint at what they're secretly thinking. Refer to {{user}} by name.`,
     '3rd-close': `Third person, close: narrate the main character as he/she/they, and you may show their thoughts and feelings from inside their head. Refer to {{user}} by name.`,
     '2nd': `Second person: the narration speaks to {{user}} as "you". Everyone else is he/she/they.`,
     '1st': `First person: the main character narrates as "I". Refer to {{user}} by name, or as "you" when the main character speaks to them.`,

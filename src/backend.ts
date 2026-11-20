@@ -79,7 +79,7 @@ function readSession(value: unknown): Session | null {
   return {
     version: 1, id: v.id, mode: v.mode === 'quick' ? 'quick' : 'full', startedAt: Number(v.startedAt) || Date.now(), turns: turns.length ? turns : freshSession('full').turns, blocks,
     ...(Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: 'x', turns: [], blocks: v.undo })!.blocks } : {}),
-    ...(typeof src.characterId === 'string' ? { source: { characterId: src.characterId, name: String(src.name ?? ''), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...(typeof src.paigeBookId === 'string' ? { paigeBookId: src.paigeBookId } : {}) } } : {}),
+    ...(typeof src.characterId === 'string' ? { source: { characterId: src.characterId, name: String(src.name ?? ''), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...(typeof src.paigeBookId === 'string' ? { paigeBookId: src.paigeBookId } : {}), ...(typeof src.castEntryId === 'string' ? { castEntryId: src.castEntryId, cast: String(src.cast ?? '') } : {}) } } : {}),
     ...(typeof rp.chatId === 'string' ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? ''), ...(REACHES.includes(rp.reach as Reach) ? { reach: rp.reach as Reach } : {}) } } : {}),
     ...(typeof card.characterId === 'string' ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ''), personaId: typeof card.personaId === 'string' ? card.personaId : undefined, name: String(card.name ?? ''), savedAt: Number(card.savedAt) || 0 } } : {}),
   };

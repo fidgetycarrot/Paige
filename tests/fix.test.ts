@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { changedLooks, parseBlocks, upsertBlocks } from '../src/blocks';
+import { castList, changedLooks, parseBlocks, upsertBlocks } from '../src/blocks';
 import { cardToBlocks, entryFor, planFix, type CardIn, type EntryIn } from '../src/fix';
 import { buildMessages, roleplayText } from '../src/prompt';
 import { thinkingFor } from '../src/backend';
@@ -111,4 +111,39 @@ test('only new or changed looks count when fixing', () => {
   expect(changedLooks(blocks)).toEqual([]);
   const sheet = upsertBlocks(blocks, parseBlocks('```\nSide character\nName: Mara Venn\n## Look\nShaved head.\n```\n```\nSide character\nName: Ash\n## Look\nTall.\n```'), 2, id).sheet;
   expect(changedLooks(sheet)).toEqual(['Mara Venn', 'Ash']);
+});
+
+describe('bringing back a narrator card', () => {
+  const narr: CardIn = { ...card, name: 'The Long Road', description: '[Narrator]\nName: The Long Road\n## Role\nThe narrator.' };
+  const castText = '[Cast]\nEveryone in this story. Each person\'s full entry loads when they come up.\n- Mara Venn.';
+  const withCast: EntryIn[] = [...entries, { id: 'cast', world_book_id: 'book2', key: [], content: castText, comment: 'Cast list', constant: true, disabled: false, extensions: { paige: { sessionId: 's' } } }];
+  const { blocks, source } = cardToBlocks(narr, withCast, id, 1);
+  test('the narrator comes back as a Narrator piece and the cast list is left out of the pieces', () => {
+    const narrator = blocks.find(b => b.type === 'Narrator')!;
+    expect(narrator.body.startsWith('Name: The Long Road')).toBe(true);
+    expect(blocks.some(b => b.body.includes('[Cast]'))).toBe(false);
+    expect(source.castEntryId).toBe('cast');
+    expect(source.entryIds).not.toContain('cast');
+  });
+  test('nothing changed: the cast list and description are left alone', () => {
+    const plan = planFix(blocks, { ...source, cast: castList(blocks) });
+    expect(plan.patch.description).toBeUndefined();
+    expect(plan.updates).toEqual([]);
+    expect(plan.disable).toEqual([]);
+  });
+  test('a new side character updates the cast list; an edited narrator keeps its label', () => {
+    const more = [...blocks.map(b => b.type === 'Narrator' ? { ...b, body: b.body + '\nScenes keep moving.' } : b), { id: 'n1', type: 'Side character' as const, name: 'Ash', body: 'Name: Ash\n## Identity\nRole: bounty hunter', updatedAt: 2 }];
+    const plan = planFix(more, source);
+    expect(plan.patch.description!.startsWith('[Narrator]\nName: The Long Road')).toBe(true);
+    const cast = plan.updates.find(u => u.entryId === 'cast')!;
+    expect(cast.plan.content).toContain('- Ash: bounty hunter.');
+    expect(cast.plan.constant).toBe(true);
+  });
+  test('turning a character card into a narrator card moves the main character into the lorebook', () => {
+    const { blocks: cb, source: cs } = cardToBlocks(card, entries, id, 1);
+    const plan = planFix([...cb, { id: 'n2', type: 'Narrator' as const, name: 'Port Hesk', body: 'Name: Port Hesk\n## Role\nThe narrator.', updatedAt: 2 }], cs);
+    expect(plan.patch.description!.startsWith('[Narrator]\nName: Port Hesk')).toBe(true);
+    expect(plan.create.some(e => e.comment === 'Main character · Vesper' && e.constant)).toBe(true);
+    expect(plan.create.some(e => e.comment === 'Cast list')).toBe(true);
+  });
 });
