@@ -675,6 +675,22 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 - List what you changed, say the weakest spot left, and tell {{user}} the Update button saves the fixes to the card, or the copy box saves them as a new card and leaves this one alone. Then Phase 5 as usual.`;
 }
 var ROLEPLAY_BUDGET = 24000;
+function promptCleaner(scripts) {
+  const compiled = scripts.flatMap((script) => {
+    if (script.disabled || /\{\{/.test(script.find_regex) || /\{\{/.test(script.replace_string) && script.substitute_macros && script.substitute_macros !== "none")
+      return [];
+    const flags = [...new Set(script.flags.replace(/[^dgimsuvy]/g, ""))].join("");
+    try {
+      return [{ re: new RegExp(script.find_regex, flags), replace: script.replace_string.replace(/\{\{match\}\}/gi, "$&"), user: script.placement.includes("user_input"), ai: script.placement.includes("ai_output") }];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    count: compiled.length,
+    clean: (text, isUser) => compiled.reduce((out, s) => (isUser ? s.user : s.ai) ? out.replace(s.re, s.replace) : out, text)
+  };
+}
 function roleplayText(chatName, messages) {
   const lines = [];
   let used = 0;
@@ -1396,7 +1412,7 @@ function setupBackend(api) {
           const preview = await readRoleplay(current);
           await persist();
           broadcast();
-          return { session: current, words: preview.words, count: preview.count };
+          return { session: current, words: preview.words, count: preview.count, cleaned: preview.cleaned };
         }
         if (current.roleplay)
           current.roleplay.on = false;
@@ -1696,7 +1712,7 @@ ${body}` }],
       async function readRoleplay(current) {
         const rp = current.roleplay;
         if (!rp?.on)
-          return { text: "", count: 0, words: 0 };
+          return { text: "", count: 0, words: 0, cleaned: null };
         for (const permission of ["chats", "chat_mutation"])
           if (!api.permissions.has(permission))
             throw new Error(`Grant Paige the ${permission} permission in Extensions so she can read the roleplay, or switch Read the roleplay off. She only reads with it.`);
@@ -1706,8 +1722,10 @@ ${body}` }],
         } catch {
           throw new Error("Paige couldn\u2019t read that chat. Pick another one, or switch Read the roleplay off.");
         }
-        const result = roleplayText(rp.chatName, messages.filter((m) => m.role !== "system").map((m) => ({ name: m.name, isUser: m.is_user, content: m.content ?? "" })));
-        return { ...result, words: result.text.split(/\s+/).length };
+        const scripts = api.permissions.has("regex_scripts") ? await Promise.resolve().then(() => api.regex_scripts.getActive({ target: "prompt", chatId: rp.chatId, characterId: current.source?.characterId, userId })).catch(() => null) : null;
+        const cleaner = promptCleaner(scripts ?? []);
+        const result = roleplayText(rp.chatName, messages.filter((m) => m.role !== "system").map((m) => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? "", m.is_user) })));
+        return { ...result, words: result.text.split(/\s+/).length, cleaned: scripts ? cleaner.count : null };
       }
       async function saveFixes(current, asCopy, copyName, looks) {
         const source = current.source;

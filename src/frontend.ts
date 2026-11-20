@@ -1042,10 +1042,13 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     chatPick.replaceChildren(...chats.map(c => { const o = el('option', `${c.name} · ${new Date(c.updatedAt * (c.updatedAt < 1e12 ? 1000 : 1)).toLocaleDateString()}`); o.value = c.id; return o; }));
   }
   async function setReading(on: boolean, chatId = '') {
-    const result = await rpc.request<{ session: Session; words: number; count: number }>('setRoleplay', { on, chatId });
+    const result = await rpc.request<{ session: Session; words: number; count: number; cleaned: number | null }>('setRoleplay', { on, chatId });
     session = result.session;
     renderFixBar();
-    if (on) readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time. Switch it off when she’s seen enough.`;
+    const trackers = result.cleaned === null
+      ? ' Grant Paige the regex_scripts permission in Extensions and she’ll leave out trackers the way your main chat does, so she can read further back.'
+      : result.cleaned ? ' Trackers your preset leaves out of the main chat are left out here too.' : '';
+    if (on) readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} Switch it off when she’s seen enough.`;
   }
   readBox.addEventListener('change', () => void act(async () => {
     if (!readBox.checked) { await setReading(false); return; }

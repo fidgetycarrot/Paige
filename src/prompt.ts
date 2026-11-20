@@ -197,6 +197,29 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 
 /** The end of a roleplay, newest last, within a budget so it doesn't swamp the prompt. */
 export const ROLEPLAY_BUDGET = 24_000;
+
+/** A regex script from Lumiverse, as much of it as Paige needs. */
+export interface PromptScript { find_regex: string; replace_string: string; flags: string; placement: string[]; substitute_macros?: string; disabled?: boolean }
+
+/**
+ * Lumiverse's prompt regex scripts are how a preset keeps trackers, status boxes and other extras out of what the
+ * main model reads. Paige runs the same ones over the roleplay, so she reads the story the way the model does,
+ * not the trackers. Only plain find-and-replace scripts: anything with macros is skipped, since only Lumiverse can
+ * fill those in. Depth limits are ignored, so trackers come off every message, not only the older ones.
+ */
+export function promptCleaner(scripts: PromptScript[]): { clean: (text: string, isUser: boolean) => string; count: number } {
+  const compiled = scripts.flatMap(script => {
+    if (script.disabled || /\{\{/.test(script.find_regex) || (/\{\{/.test(script.replace_string) && script.substitute_macros && script.substitute_macros !== 'none')) return [];
+    const flags = [...new Set(script.flags.replace(/[^dgimsuvy]/g, ''))].join('');
+    try {
+      return [{ re: new RegExp(script.find_regex, flags), replace: script.replace_string.replace(/\{\{match\}\}/gi, '$&'), user: script.placement.includes('user_input'), ai: script.placement.includes('ai_output') }];
+    } catch { return []; }
+  });
+  return {
+    count: compiled.length,
+    clean: (text, isUser) => compiled.reduce((out, s) => (isUser ? s.user : s.ai) ? out.replace(s.re, s.replace) : out, text),
+  };
+}
 export function roleplayText(chatName: string, messages: { name: string; isUser: boolean; content: string }[]): { text: string; count: number } {
   const lines: string[] = [];
   let used = 0;

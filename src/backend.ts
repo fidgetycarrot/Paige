@@ -3,6 +3,7 @@ import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, rememberLi
 import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
+import { promptCleaner } from './prompt';
 import { ABOUT_MAX, PICTURE_MAX_BYTES, PICTURE_MIMES, record, type PictureMime, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 import { uuid } from './safe-id';
 import { DETECT_SYSTEM, FALLBACK_POV, parseDetection, perspectiveRule, POV_NAMES, POV_SETTINGS, POVS, presetText, type Pov, type PovSetting } from './perspective';
@@ -284,7 +285,7 @@ export function setupBackend(api: SpindleAPI) {
           current.roleplay = { on: true, chatId, chatName: chat.name || 'Untitled chat' };
           const preview = await readRoleplay(current);
           await persist(); broadcast();
-          return { session: current, words: preview.words, count: preview.count };
+          return { session: current, words: preview.words, count: preview.count, cleaned: preview.cleaned };
         }
         if (current.roleplay) current.roleplay.on = false;
         await persist(); broadcast();
@@ -521,15 +522,20 @@ export function setupBackend(api: SpindleAPI) {
       }
 
       /** The end of the chosen chat, read fresh each time so Paige sees the latest. */
-      async function readRoleplay(current: Session): Promise<{ text: string; count: number; words: number }> {
+      async function readRoleplay(current: Session): Promise<{ text: string; count: number; words: number; cleaned: number | null }> {
         const rp = current.roleplay;
-        if (!rp?.on) return { text: '', count: 0, words: 0 };
+        if (!rp?.on) return { text: '', count: 0, words: 0, cleaned: null };
         for (const permission of ['chats', 'chat_mutation']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions so she can read the roleplay, or switch Read the roleplay off. She only reads with it.`);
         let messages: { name: string; is_user: boolean; content: string; role?: string }[];
         try { messages = await api.chat.getMessages(rp.chatId); }
         catch { throw new Error('Paige couldn’t read that chat. Pick another one, or switch Read the roleplay off.'); }
-        const result = roleplayText(rp.chatName, messages.filter(m => m.role !== 'system').map(m => ({ name: m.name, isUser: m.is_user, content: m.content ?? '' })));
-        return { ...result, words: result.text.split(/\s+/).length };
+        // The preset's own prompt cleanup takes trackers out, the same way the main chat does.
+        const scripts = api.permissions.has('regex_scripts')
+          ? await Promise.resolve().then(() => api.regex_scripts.getActive({ target: 'prompt', chatId: rp.chatId, characterId: current.source?.characterId, userId })).catch(() => null)
+          : null;
+        const cleaner = promptCleaner(scripts ?? []);
+        const result = roleplayText(rp.chatName, messages.filter(m => m.role !== 'system').map(m => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? '', m.is_user) })));
+        return { ...result, words: result.text.split(/\s+/).length, cleaned: scripts ? cleaner.count : null };
       }
 
       /** Saves the notebook's changes back to the card it came from, or to a new copy of it. */

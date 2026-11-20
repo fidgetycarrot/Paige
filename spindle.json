@@ -1,7 +1,7 @@
 {
   "name": "Paige",
   "identifier": "paige",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "author": "fidgetycarrot",
   "github": "https://github.com/fidgetycarrot/Paige",
   "homepage": "https://github.com/fidgetycarrot/Paige#readme",
@@ -13,7 +13,8 @@
     "personas",
     "presets",
     "chats",
-    "chat_mutation"
+    "chat_mutation",
+    "regex_scripts"
   ],
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",

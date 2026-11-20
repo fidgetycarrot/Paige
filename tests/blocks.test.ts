@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { labelOf, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block } from '../src/blocks';
-import { aboutMeText, appNotes, buildMessages, greeting, paigeRules } from '../src/prompt';
+import { aboutMeText, appNotes, buildMessages, promptCleaner, greeting, paigeRules } from '../src/prompt';
 
 const reply = `*She slides the clipboard over.* "Done. Here's Mara."
 
@@ -265,5 +265,20 @@ describe('pictures', () => {
   });
   test('no picture notes when there are no pictures', () => {
     expect(String(buildMessages({ mode: 'full', blocks: [], turns: [{ role: 'user', content: 'hi' }] })[0].content)).not.toContain('## Pictures');
+  });
+});
+
+describe('roleplay cleanup', () => {
+  test('the preset’s plain prompt scripts take trackers out; macro scripts and bad patterns are skipped', () => {
+    const { clean, count } = promptCleaner([
+      { find_regex: '<sola_hud\\b[\\s\\S]*?<\\/sola_hud>', replace_string: '', flags: 'gi', placement: ['ai_output'] },
+      { find_regex: '{{char}}', replace_string: 'x', flags: 'g', placement: ['ai_output'], substitute_macros: 'raw' },
+      { find_regex: '(', replace_string: '', flags: 'g', placement: ['ai_output'] },
+      { find_regex: 'OOC', replace_string: '', flags: 'g', placement: ['user_input'] },
+      { find_regex: 'old', replace_string: 'off', flags: 'g', placement: ['ai_output'], disabled: true },
+    ]);
+    expect(count).toBe(2);
+    expect(clean('She waits.<sola_hud mood="x">Bond: 4\nHP: 9</sola_hud> old', false)).toBe('She waits. old');
+    expect(clean('OOC hi <sola_hud></sola_hud>', true)).toBe(' hi <sola_hud></sola_hud>');
   });
 });

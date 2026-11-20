@@ -1797,8 +1797,9 @@ function setup(ctx, options = {}) {
     const result = await rpc.request("setRoleplay", { on, chatId });
     session = result.session;
     renderFixBar();
+    const trackers = result.cleaned === null ? " Grant Paige the regex_scripts permission in Extensions and she’ll leave out trackers the way your main chat does, so she can read further back." : result.cleaned ? " Trackers your preset leaves out of the main chat are left out here too." : "";
     if (on)
-      readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time. Switch it off when she’s seen enough.`;
+      readNote.textContent = `Paige reads the last ${result.count} messages of “${session.roleplay?.chatName}” with everything you send her: about ${result.words.toLocaleString()} more words each time.${trackers} Switch it off when she’s seen enough.`;
   }
   readBox.addEventListener("change", () => void act(async () => {
     if (!readBox.checked) {

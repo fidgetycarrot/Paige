@@ -8,7 +8,7 @@ Paige, her personality and her whole interview are by **Deiomo** ([deiomo.github
 
 In Lumiverse, open Extensions and install from GitHub: `https://github.com/fidgetycarrot/Paige`
 
-Give it these permissions: generation, characters, world_books, personas, presets. For **Let Paige read the roleplay** (optional), also chats and chat_mutation; Paige only reads chats with them, never changes one.
+Give it these permissions: generation, characters, world_books, personas, presets. For **Let Paige read the roleplay** (optional), also chats and chat_mutation, plus regex_scripts to leave out trackers; Paige only reads chats with them, never changes one.
 
 ## Use
 
@@ -35,6 +35,8 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 **Looks for LumiCast.** Every character (main, side and persona) gets one full Appearance section: age and height, body, skin, hair and bangs, face, nose, eyes, eyebrows, mouth, and outfit, in plain facts. Paige fills in anything you didn't decide, so faces stay the same from picture to picture. No moods, metaphors or anime terms in a look.
 
 **Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, characters get a home outfit, shared things (an oath, a power) live in one lorebook entry, and trigger words include nicknames and descriptions but not everyday words. In fixing mode Paige has a list of common problems and where they come from.
+
+**Reading the roleplay with trackers.** If your preset has regex scripts that keep trackers and status boxes out of the main chat's prompt, Paige runs the same ones over the roleplay she reads, so she gets the story and can read further back. It needs the regex_scripts permission; scripts that use macros are skipped.
 
 **Pictures.** Send a picture with a message (the picture button, paste, or drop it on the chat): a character, a place or a mood. Paige writes the look straight from it, so LumiCast's pictures match your art. She sees each picture once, with its message, and writes down what she needs, so it doesn't cost more on every turn. Pictures are shrunk before sending and kept in Paige's storage. When you make the card you can pick one as the card's picture. Paige's model connection has to be one that can see pictures.
 
