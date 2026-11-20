@@ -188,9 +188,20 @@ const STYLES = `
 .pg-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 .pg-app textarea,.pg-app input[type=text],.pg-app select{width:100%;border:1px solid var(--pg-edge);border-radius:8px;background:var(--pg-paper);color:inherit;padding:10px 12px;font:inherit;line-height:1.45}
 .pg-app textarea:focus,.pg-app input[type=text]:focus,.pg-app select:focus{border-color:var(--pg-violet);outline:none}
-.pg-compose .pg-row{flex-wrap:nowrap}
-.pg-compose textarea{resize:none;min-height:44px;max-height:180px;flex:1}
-.pg-pic-btn{padding:0 10px;display:inline-flex;align-items:center;justify-content:center}.pg-pic-btn svg{width:20px;height:20px}
+.pg-inputbar{display:flex;align-items:flex-end;gap:2px;border:1px solid var(--pg-edge);border-radius:14px;background:var(--pg-paper);padding:3px}
+.pg-inputbar:focus-within{border-color:var(--pg-violet)}
+.pg-app .pg-inputbar textarea{flex:1;min-width:0;resize:none;min-height:40px;max-height:180px;border:0;background:none;padding:9px 6px}
+.pg-app .pg-inputbar textarea:focus{border:0}
+.pg-app .pg-icon-btn{flex:none;width:40px;height:40px;padding:0;border:0;border-radius:11px;background:none;color:var(--pg-pencil);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.pg-app .pg-icon-btn svg{width:21px;height:21px}
+.pg-app .pg-icon-btn:hover:not(:disabled){color:var(--pg-ink);background:#ffffff0d}
+.pg-app .pg-icon-btn.pg-send{background:var(--pg-violet);color:var(--pg-violet-ink)}
+.pg-app .pg-icon-btn.pg-send:disabled{opacity:.45;cursor:default}
+.pg-app .pg-icon-btn.pg-stop{background:#ffffff14;color:var(--pg-ink)}
+.pg-app .pg-icon-btn[hidden]{display:none}
+.pg-chips button.pg-retry{border-style:solid;border-color:var(--pg-edge);color:var(--pg-pencil)}
+/* While a phone keyboard is up, the shortcuts and the fixing bar step aside so the chat and the box have room. */
+.pg-app.pg-typing .pg-chips,.pg-app.pg-typing .pg-fixbar{display:none}
 .pg-pending{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px;color:var(--pg-pencil)}
 .pg-pending img{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--pg-edge)}
 .pg-msg .pg-pic{display:block;max-width:min(240px,100%);max-height:240px;border-radius:6px;margin-bottom:6px;object-fit:contain}
@@ -424,18 +435,22 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   });
   chips.append(mode);
   const box = el('textarea'); box.rows = 1; box.placeholder = 'Answer Paige…'; box.setAttribute('aria-label', 'Your message');
-  const sendButton = el('button', 'Send', 'pg-btn pg-primary'); sendButton.type = 'button';
-  const stopButton = el('button', 'Stop', 'pg-btn'); stopButton.type = 'button';
-  const retryButton = el('button', 'Retry', 'pg-btn'); retryButton.type = 'button'; retryButton.title = 'Take back Paige’s last reply and ask again';
+  const sendButton = el('button', undefined, 'pg-icon-btn pg-send'); sendButton.type = 'button'; sendButton.setAttribute('aria-label', 'Send'); sendButton.title = 'Send';
+  sendButton.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>');
+  const stopButton = el('button', undefined, 'pg-icon-btn pg-stop'); stopButton.type = 'button'; stopButton.setAttribute('aria-label', 'Stop'); stopButton.title = 'Stop';
+  stopButton.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>');
+  const retryButton = el('button', '↻ Retry', 'pg-retry'); retryButton.type = 'button'; retryButton.title = 'Take back Paige’s last reply and ask again';
+  chips.insertBefore(retryButton, mode);
   const status = el('div', undefined, 'pg-status'); status.setAttribute('role', 'status');
   // A picture to send with the next message: the button, pasting, or dropping one on the chat.
-  const picButton = el('button', undefined, 'pg-btn pg-pic-btn'); picButton.type = 'button';
+  const picButton = el('button', undefined, 'pg-icon-btn pg-pic-btn'); picButton.type = 'button';
   picButton.title = 'Send a picture: a character, a place or a mood'; picButton.setAttribute('aria-label', 'Add a picture');
   picButton.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/></svg>');
   const picFile = el('input'); picFile.type = 'file'; picFile.accept = 'image/*'; picFile.hidden = true;
   const pending = el('div', undefined, 'pg-pending'); pending.hidden = true;
   let pendingPicture: { data: string; mime: PictureMime; url: string } | null = null;
-  const row = el('div', undefined, 'pg-row'); row.append(picButton, box, sendButton, stopButton, retryButton);
+  // One rounded bar: picture on the left, the box in the middle with all the room, Send (or Stop) on the right.
+  const row = el('div', undefined, 'pg-inputbar'); row.append(picButton, box, sendButton, stopButton);
   compose.append(chips, pending, row, status, picFile);
   const showPending = () => {
     pending.replaceChildren(); pending.hidden = !pendingPicture;
@@ -473,7 +488,10 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   const fixLine = el('div', undefined, 'pg-fix-line'); fixLine.append(fixTitle, readRow, chatPick, reachPick);
   fixBar.append(fixLine, readNote);
   views.chat.append(fixBar, log, compose);
-  const grow = () => { box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`; };
+  const grow = () => {
+    const room = Math.max(44, Math.min(180, Math.floor((app.clientHeight || 600) * 0.36)));
+    box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, room)}px`;
+  };
   box.addEventListener('input', grow);
   // Paige always fills exactly the visible part of the screen, so only her chat scrolls, never the drawer around
   // it (a redraw used to throw the drawer back to the top). On iOS the keyboard slides over the page without
@@ -529,6 +547,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     // Padding the drawer puts under Paige would still let the drawer itself scroll a little; take that off too.
     const spare = outer ? outer.scrollHeight - outer.clientHeight : 0;
     if (spare > 1) app.style.height = `${Math.max(260, app.getBoundingClientRect().height - spare)}px`;
+    grow();
     if (!streaming && !keepReading && (atBottom || typing)) log.scrollTop = log.scrollHeight;
   };
   // iOS moves the page a moment after the keyboard opens or closes, so look again once it has settled.
@@ -1038,8 +1057,13 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     const rp = session?.roleplay;
     readBox.checked = !!rp?.on;
     chatPick.hidden = !rp?.on; reachPick.hidden = !rp?.on; reachPick.value = rp?.reach ?? 'recent';
+    if (rp?.on && !chatPick.options.length && !fillingChats) {
+      fillingChats = true;
+      void loadChats().then(() => { if (session?.roleplay) chatPick.value = session.roleplay.chatId; }).catch(() => {}).finally(() => { fillingChats = false; });
+    }
     if (!rp?.on) readNote.textContent = 'Off: Paige only knows what you tell her. On, she reads the end of one of this card’s chats with every message, which costs more.';
   }
+  let fillingChats = false;
   async function loadChats() {
     chats = await rpc.request<ChatListItem[]>('listChats');
     chatPick.replaceChildren(...chats.map(c => { const o = el('option', `${c.name} · ${new Date(c.updatedAt * (c.updatedAt < 1e12 ? 1000 : 1)).toLocaleDateString()}`); o.value = c.id; return o; }));
@@ -1114,8 +1138,9 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   function update() {
     const working = busy || remoteBusy;
     sendButton.hidden = working && !!streaming; stopButton.hidden = !(working && (streaming || remoteBusy));
-    sendButton.disabled = working; box.disabled = false; retryButton.disabled = working || !session || session.turns.length < 2;
+    sendButton.disabled = working; box.disabled = false;
     for (const b of chips.querySelectorAll('button')) (b as HTMLButtonElement).disabled = working;
+    retryButton.disabled = working || !session || session.turns.length < 2;
     modeButtons.forEach((b, i) => b.setAttribute('aria-pressed', String((session?.mode ?? 'full') === (['full', 'quick'] as Mode[])[i])));
     makeButton.disabled = working || (!session?.source && !session?.blocks.some(b => b.type !== 'First message'));
     bringButton.disabled = working; readBox.disabled = working; chatPick.disabled = working;
