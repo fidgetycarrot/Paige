@@ -897,6 +897,17 @@ function setup(ctx, options = {}) {
   };
   box.addEventListener("input", grow);
   const view = globalThis.visualViewport;
+  const hostNumber = (name) => {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+    return Number.isFinite(value) ? value : null;
+  };
+  const visible = () => {
+    const height = hostNumber("--app-visual-viewport-height");
+    if (height && height > 0)
+      return { top: hostNumber("--app-visual-viewport-offset-top") ?? 0, height, keyboard: hostNumber("--app-keyboard-inset-bottom") ?? 0 };
+    const h = view?.height ?? window.innerHeight;
+    return { top: view?.offsetTop ?? 0, height: h, keyboard: window.innerHeight - h };
+  };
   let fitTimers = [];
   const scroller = () => {
     for (let node = app.parentElement;node && node !== document.body; node = node.parentElement) {
@@ -920,8 +931,9 @@ function setup(ctx, options = {}) {
     if (app.offsetParent === null)
       return;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-    const visibleTop = view?.offsetTop ?? 0, visibleBottom = visibleTop + (view?.height ?? window.innerHeight);
-    const typing = document.activeElement === box && window.innerHeight - (view?.height ?? window.innerHeight) > 100;
+    const area = visible();
+    const visibleTop = area.top, visibleBottom = area.top + area.height;
+    const typing = document.activeElement === box && area.keyboard > 60;
     app.classList.toggle("pg-typing", typing);
     const outer = scroller();
     const above = visibleTop - app.getBoundingClientRect().top;
@@ -947,6 +959,7 @@ function setup(ctx, options = {}) {
   view?.addEventListener("resize", fitSoon);
   view?.addEventListener("scroll", fit);
   window.addEventListener("resize", fitSoon);
+  window.addEventListener("lumiverse:keyboard-viewport", fitSoon);
   box.addEventListener("focus", () => {
     keepReading = false;
     fitSoon();
@@ -1949,6 +1962,7 @@ function setup(ctx, options = {}) {
     view?.removeEventListener("resize", fitSoon);
     view?.removeEventListener("scroll", fit);
     window.removeEventListener("resize", fitSoon);
+    window.removeEventListener("lumiverse:keyboard-viewport", fitSoon);
     seen?.disconnect();
     fitTimers.forEach(clearTimeout);
     if (castTimer)

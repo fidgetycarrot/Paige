@@ -477,6 +477,19 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   // resizing it, so while typing the visible part is what the keyboard leaves, with the newest message just
   // above the box.
   const view = (globalThis as { visualViewport?: VisualViewport }).visualViewport;
+  // Lumiverse works out the visible part and the keyboard itself and publishes them as CSS variables. In its iOS
+  // app the page doesn't scroll to the box, and iOS reports wrong viewport numbers there (they stick after the
+  // keyboard closes), so Lumiverse's numbers come first; the browser's are only for hosts that don't publish them.
+  const hostNumber = (name: string): number | null => {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+    return Number.isFinite(value) ? value : null;
+  };
+  const visible = (): { top: number; height: number; keyboard: number } => {
+    const height = hostNumber('--app-visual-viewport-height');
+    if (height && height > 0) return { top: hostNumber('--app-visual-viewport-offset-top') ?? 0, height, keyboard: hostNumber('--app-keyboard-inset-bottom') ?? 0 };
+    const h = view?.height ?? window.innerHeight;
+    return { top: view?.offsetTop ?? 0, height: h, keyboard: window.innerHeight - h };
+  };
   let fitTimers: ReturnType<typeof setTimeout>[] = [];
   const scroller = (): HTMLElement | null => {
     for (let node = app.parentElement; node && node !== document.body; node = node.parentElement) {
@@ -496,8 +509,9 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     }
     if (app.offsetParent === null) return;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-    const visibleTop = view?.offsetTop ?? 0, visibleBottom = visibleTop + (view?.height ?? window.innerHeight);
-    const typing = document.activeElement === box && window.innerHeight - (view?.height ?? window.innerHeight) > 100;
+    const area = visible();
+    const visibleTop = area.top, visibleBottom = area.top + area.height;
+    const typing = document.activeElement === box && area.keyboard > 60;
     app.classList.toggle('pg-typing', typing);
     // If the drawer is scrolled so Paige's top is off screen, bring it back first.
     const outer = scroller();
@@ -519,6 +533,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   view?.addEventListener('resize', fitSoon);
   view?.addEventListener('scroll', fit);
   window.addEventListener('resize', fitSoon);
+  window.addEventListener('lumiverse:keyboard-viewport', fitSoon);
   box.addEventListener('focus', () => { keepReading = false; fitSoon(); });
   box.addEventListener('blur', () => setTimeout(fitSoon, 50));
   // Showing the drawer tab, or switching tabs inside Paige, changes where she sits.
@@ -1128,7 +1143,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   busy = true; update();
   void load().catch(e => notify(e instanceof Error ? e.message : 'Paige couldn’t load.', true)).finally(() => { busy = false; if (!closed) update(); });
 
-  return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); const openModal = modal; modal = null; openModal?.dismiss(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
+  return () => { closed = true; stopCast(); document.removeEventListener('keydown', onKey); offActivate(); const openModal = modal; modal = null; openModal?.dismiss(); view?.removeEventListener('resize', fitSoon); view?.removeEventListener('scroll', fit); window.removeEventListener('resize', fitSoon); window.removeEventListener('lumiverse:keyboard-viewport', fitSoon); seen?.disconnect(); fitTimers.forEach(clearTimeout); if (castTimer) clearInterval(castTimer); if (armed) clearTimeout(armed); rpc.destroy(); removeStyle(); tab.destroy(); };
 }
 
 /** Shrinks a picture to at most 1280 pixels on its long side as a JPEG, so it's quick to send and store. */
