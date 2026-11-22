@@ -34,6 +34,8 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 
 **Character card or narrator card.** Give Paige your pitch and she says what shape it wants: a character card about one person, or a narrator card where the card is the voice running a whole world and cast. On a narrator card the Narrator piece is the description, every person is in the lorebook, and a short always-on cast list lets the narrator know who exists. Bring a narrator card back to fix it like any other; the cast list follows the people in the notebook.
 
+**Bringing fixes into your chat.** When Paige wraps up a fix she says how to get it into the chat you're playing. For small changes she writes an OOC note (in a box with a Copy button) that names the changes and lets them show gradually, with nobody remarking on them; for big ones she recommends a new chat or where to fork from.
+
 **First messages with somewhere to go.** Paige's first messages start mid-scene, give your character a few lines of footing from your persona (never what you do), and end on two or three lanes inside the scene: someone talking to you, something to look into, a pressure. The Scenario gets a Threads in motion section so the story keeps bringing you things after the opening. Secrets are labeled so the narrator keeps them until they're found.
 
 **Only new looks go to LumiCast.** Paige remembers what she last sent LumiCast for each character. Saving or updating a card sends only people LumiCast hasn't seen; a changed look (new clothes, a new age) is listed with its own checkbox, off by default, since LumiCast makes a second profile rather than touch one you may have tweaked. Changing someone's role or attitude doesn't count as a new look.

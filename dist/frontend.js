@@ -391,6 +391,47 @@ function sheetBody(target, body, skipName = true) {
   }
   target.append(sheet);
 }
+var OOC_LABEL = /^[ \t]*[*_#]*[ \t]*ooc(?:[ \t]+note)?[ \t]*[*_:]*[ \t]*$/i;
+function oocNote(info, body) {
+  if (OOC_LABEL.test(info))
+    return body.trim();
+  const lines = body.split(`
+`);
+  const first = lines.findIndex((l) => l.trim());
+  return !info.trim() && first >= 0 && OOC_LABEL.test(lines[first]) ? lines.slice(first + 1).join(`
+`).trim() : null;
+}
+function oocBox(note) {
+  const box = el("div", undefined, "pg-ooc");
+  const head = el("div", undefined, "pg-ooc-head");
+  const copy = el("button", "Copy", "pg-btn");
+  copy.type = "button";
+  head.append(el("span", "For your roleplay chat"), copy);
+  const text = el("pre", note, "pg-pre");
+  copy.addEventListener("click", () => {
+    const done = () => {
+      copy.textContent = "Copied";
+      setTimeout(() => {
+        copy.textContent = "Copy";
+      }, 2000);
+    };
+    const fallback = () => {
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const sel = getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      copy.textContent = "Selected, copy it";
+    };
+    try {
+      navigator.clipboard.writeText(note).then(done, fallback);
+    } catch {
+      fallback();
+    }
+  });
+  box.append(head, text);
+  return box;
+}
 function ticket(type, body, tag = "in your notebook") {
   const box = el("details", undefined, "pg-card");
   const name = type === "Scenario" || type === "First message" ? "" : (/^\s*[*_]*Name[*_]*\s*:\s*(.+)$/im.exec(body)?.[1] ?? "").replace(/[*_]+/g, "").trim();
@@ -412,6 +453,11 @@ function message(target, text, live = false) {
     let body = m[4];
     if (isRemember(m[3], m[4]))
       continue;
+    const ooc = oocNote(m[3], m[4]);
+    if (ooc !== null) {
+      target.append(oocBox(ooc));
+      continue;
+    }
     let type = info ? labelOf(info) : null;
     if (!type) {
       const lines = body.split(`
@@ -474,6 +520,9 @@ var STYLES = `
 .pg-saved{font-size:12px;line-height:1.5;color:var(--pg-pencil);margin-top:6px}
 .pg-cut{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px solid #ff9a7a66;background:#ff9a7a14;color:#ffc9b8;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pg-cut span{flex:1;min-width:180px}
+.pg-ooc{margin:10px 0;border:1px solid var(--pg-edge);border-left:3px solid var(--pg-violet);border-radius:8px;padding:8px 10px;background:#ffffff08}
+.pg-ooc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--pg-pencil);margin-bottom:6px}
+.pg-ooc .pg-pre{margin:0;white-space:pre-wrap}
 .pg-remember{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px dashed #b583ff66;background:#b583ff10;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pg-remember span{flex:1;min-width:180px}.pg-remember[data-done=true]{color:var(--pg-pencil);border-style:solid;border-color:var(--pg-edge);background:none}
 .pg-about{width:100%;font:inherit;font-size:14px;line-height:1.5;resize:vertical}.pg-count{display:block;text-align:right}

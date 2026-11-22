@@ -164,3 +164,12 @@ describe('bringing back a narrator card', () => {
     expect(plan.create.some(e => e.comment === 'Cast list')).toBe(true);
   });
 });
+
+test('the hand-off says how to bring fixes into the chat, and an OOC note is not a notebook piece', () => {
+  const system = String(buildMessages({ mode: 'full', blocks: [], turns: [], fixing: 'Dina' })[0].content);
+  expect(system).toContain('in a code block labeled OOC note');
+  expect(system).toContain('nobody remarking on it');
+  expect(system).toContain('recommend a new chat, or forking the chat');
+  expect(parseBlocks('Paste this:\n```\nOOC note\n(OOC: Dina dresses casually at home now.)\n```')).toEqual([]);
+  expect(parseBlocks('```OOC note\n(OOC: hi)\n```')).toEqual([]);
+});

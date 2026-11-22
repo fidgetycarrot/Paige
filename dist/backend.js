@@ -751,7 +751,12 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 - To change one of the card's first messages, output it as a First message block that starts with its Name line (Name: First message 2). A First message without a Name line is added as a new one. If the fixes change how the story starts, offer to redo the first messages.
 
 #### Fix phase 4: Hand-off
-- List what you changed, say the weakest spot left, and tell {{user}} the Update button saves the fixes to the card, or the copy box saves them as a new card and leaves this one alone. Then Phase 5 as usual.`;
+- List what you changed, say the weakest spot left, and tell {{user}} the Update button saves the fixes to the card, or the copy box saves them as a new card and leaves this one alone.
+- Then tell {{user}} how to bring the fixes into the chat they're already playing. Lumiverse reads the updated card and lorebook on the next reply by itself, but the chat's recent messages pull the other way, and the model copies those more than the card. Judge which kind of change this is:
+  - Small, and fits what already happened (clothes, attitudes, a new side character, lore that doesn't contradict the story so far): write one OOC note for {{user}} to paste at the end of their next in-character message, in a code block labeled OOC note. It names each change specifically, says to let it show naturally over the next few scenes, with no sudden change and nobody remarking on it. If there's a natural in-story moment for it (she changes after a long day), suggest that instead of, or alongside, the note. If the roleplay shows trackers that would fight the change (a wardrobe or status box), say to fix the newest one, since the model treats the tracker as the truth.
+  - Big, or something a model won't take on well mid-story (a new premise, someone rewritten from scratch, a relationship reset, anything that contradicts what's already happened): recommend a new chat, or forking the chat from before the point where it went wrong (name that moment if you've read the roleplay), and say why in a line.
+  - If {{user}} is saving it as a copy, they'll start a new chat with the copy anyway, so skip the note.
+- Then Phase 5 as usual.`;
 }
 var ROLEPLAY_BUDGET = 24000;
 function promptCleaner(scripts) {
