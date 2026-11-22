@@ -36,6 +36,8 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 
 **First messages with somewhere to go.** Paige's first messages start mid-scene, give your character a few lines of footing from your persona (never what you do), and end on two or three lanes inside the scene: someone talking to you, something to look into, a pressure. The Scenario gets a Threads in motion section so the story keeps bringing you things after the opening. Secrets are labeled so the narrator keeps them until they're found.
 
+**Only new looks go to LumiCast.** Paige remembers what she last sent LumiCast for each character. Saving or updating a card sends only people LumiCast hasn't seen; a changed look (new clothes, a new age) is listed with its own checkbox, off by default, since LumiCast makes a second profile rather than touch one you may have tweaked. Changing someone's role or attitude doesn't count as a new look.
+
 **Looks for LumiCast.** Every character (main, side and persona) gets one full Appearance section: age and height, body, skin, hair and bangs, face, nose, eyes, eyebrows, mouth, and outfit, in plain facts. Paige fills in anything you didn't decide, so faces stay the same from picture to picture. No moods, metaphors or anime terms in a look.
 
 **Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, characters get a home outfit, shared things (an oath, a power) live in one lorebook entry, and trigger words include nicknames and descriptions but not everyday words. In fixing mode Paige has a list of common problems and where they come from.

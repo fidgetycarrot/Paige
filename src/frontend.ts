@@ -1,5 +1,5 @@
 import type { SpindleFrontendContext } from 'lumiverse-spindle-types';
-import { BLOCK_TYPES, isRemember, labelOf, looksFrom, type Block, type BlockType, type Mode } from './blocks';
+import { BLOCK_TYPES, isRemember, labelOf, lookStatus, looksFrom, type Block, type BlockType, type Mode } from './blocks';
 import { ABOUT_MAX, REACH_NAMES, REACHES } from './contracts';
 import type { PictureMime } from './contracts';
 import type { CardListItem, CardResult, CastStatus, ChatListItem, LumiCastStatus, Session, Settings, Snapshot } from './contracts';
@@ -583,6 +583,11 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   looks.addEventListener('change', () => { try { localStorage.setItem('paige.looks', looks.checked ? '1' : '0'); } catch { /* not kept */ } });
   const looksText = el('span', 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw');
   const looksRow = el('label', undefined, 'pg-check'); looksRow.append(looks, looksText);
+  // Changed looks only go again when asked: LumiCast makes a second profile rather than touch one you may have tweaked.
+  const lookAgain = el('input'); lookAgain.type = 'checkbox';
+  const lookAgainText = el('span', '');
+  const lookAgainRow = el('label', undefined, 'pg-check'); lookAgainRow.append(lookAgain, lookAgainText); lookAgainRow.hidden = true;
+  looks.addEventListener('change', () => { lookAgainRow.hidden = !looks.checked || !lookAgainText.dataset.names; });
   const makeButton = el('button', 'Make my card', 'pg-btn pg-primary'); makeButton.type = 'button';
   const resendButton = el('button', 'Choose who to send', 'pg-btn'); resendButton.type = 'button';
   const makeStatus = el('div', undefined, 'pg-status'); makeStatus.setAttribute('role', 'status');
@@ -600,7 +605,7 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   let cardPicture = '';
   const cardPics = el('div', undefined, 'pg-card-pics'); cardPics.setAttribute('role', 'group'); cardPics.setAttribute('aria-label', 'Card picture');
   const cardPicField = el('div', undefined, 'pg-field'); cardPicField.append(el('span', 'Card picture'), cardPics, el('small', 'Use a picture you sent as the card’s picture. Left as it is unless you pick one.', 'pg-note'));
-  make.append(makeTitle, makeHint, copyRow, nameField, cardPicField, looksRow, unsaved, makeRow, pick, makeStatus, cast);
+  make.append(makeTitle, makeHint, copyRow, nameField, cardPicField, looksRow, lookAgainRow, unsaved, makeRow, pick, makeStatus, cast);
   function renderCardPics() {
     const pics = (session?.turns ?? []).flatMap(t => t.picture && !t.picture.id.startsWith('local-') ? [t.picture.id] : []);
     if (cardPicture && !pics.includes(cardPicture)) cardPicture = '';
@@ -621,8 +626,9 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
   makeButton.addEventListener('click', () => void act(async () => {
     const fixing = !!session?.source, asCopy = fixing && copyBox.checked;
     makeNotify(fixing ? (asCopy ? 'Saving the copy…' : 'Saving the fixes…') : 'Making the card…');
-    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked, asCopy, ...(cardPicture ? { pictureId: cardPicture } : {}) });
+    const result = await rpc.request<CardResult>('makeCard', { name: cardName.value, sendLooks: looks.checked, sendChanged: lookAgain.checked && !lookAgainRow.hidden, asCopy, ...(cardPicture ? { pictureId: cardPicture } : {}) });
     session = result.session;
+    lookAgain.checked = false;
     if (cardPicture && !result.notes.some(n => n.includes('picture couldn’t'))) { result.notes.push('The card’s picture is set.'); cardPicture = ''; }
     if (asCopy) { copyBox.checked = false; }
     const made = [
@@ -1107,7 +1113,13 @@ export function setup(ctx: SpindleFrontendContext, options: { castPollMs?: numbe
     if (!cardName.value && session?.card?.name) cardName.value = session.card.name;
     const fixing = session?.source;
     copyRow.hidden = !fixing;
-    looksText.textContent = fixing ? 'Also send looks that are new or changed to LumiCast. Everyone else is left alone in Lumi Studio.' : 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw';
+    const lookNow = lookStatus(blocks, session?.sentLooks);
+    const firstTime = !fixing && !session?.card;
+    looksText.textContent = firstTime ? 'Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw'
+      : lookNow.added.length ? `Also send new looks to LumiCast: ${lookNow.added.join(', ')}` : 'Also send new looks to LumiCast (none right now)';
+    lookAgainText.dataset.names = firstTime ? '' : lookNow.changed.join(', ');
+    lookAgainText.textContent = `Also re-send changed looks: ${lookNow.changed.join(', ')}. LumiCast makes a new profile for each and leaves the old one alone.`;
+    lookAgainRow.hidden = !looks.checked || !lookAgainText.dataset.names;
     if (!fixing) copyBox.checked = false;
     nameField.hidden = !!fixing && !copyBox.checked;
     makeTitle.textContent = fixing ? 'Save my fixes' : session?.card ? 'Update my card' : 'Make my card';

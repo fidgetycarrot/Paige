@@ -278,9 +278,30 @@ ${parts.join(`
   }
   return looks;
 }
-function changedLooks(blocks) {
-  const before = new Map(looksFrom(blocks.filter((b) => b.origin !== undefined).map((b) => ({ ...b, body: b.origin }))).map((l) => [l.name.toLowerCase(), l.description]));
-  return looksFrom(blocks).filter((l) => before.get(l.name.toLowerCase()) !== l.description).map((l) => l.name);
+var LOOK_IDENTITY = /^[ \t]*(?:[-*\u2022][ \t]*)?[*_]*(?:full name|name|apparent age|age|gender|sex|pronouns|race|species|race \/ species|height)[*_]*[ \t]*:/i;
+function lookHash(look) {
+  const text = look.description.split(/\n(?=##\s)/).map((part) => /^##\s*identity\b/i.test(part) ? part.split(`
+`).filter((line) => LOOK_IDENTITY.test(line)).join(`
+`) : part).join(`
+`).replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  let hash = 2166136261;
+  for (let i = 0;i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+function lookStatus(blocks, sent = {}) {
+  const before = new Map(looksFrom(blocks.filter((b) => b.origin !== undefined).map((b) => ({ ...b, body: b.origin }))).map((l) => [l.name.toLowerCase(), lookHash(l)]));
+  const added = [], changed = [];
+  for (const look of looksFrom(blocks)) {
+    const key = look.name.toLowerCase(), base = sent[key] ?? before.get(key);
+    if (base === undefined)
+      added.push(look.name);
+    else if (base !== lookHash(look))
+      changed.push(look.name);
+  }
+  return { added, changed };
 }
 var PLAYER_RULE = "This is the human-controlled player. These are starting facts, not a script. During live play the human supplies their actions, dialogue, thoughts, feelings and decisions.";
 var CAST_LABEL = "[Cast]";
@@ -1238,7 +1259,7 @@ function readSession(value) {
       ...foreign === true ? { foreign: true } : {}
     }))(record(b.source)) } : {}
   }));
-  const src = record(v.source), rp = record(v.roleplay);
+  const src = record(v.source), rp = record(v.roleplay), sentLooks = Object.fromEntries(Object.entries(record(v.sentLooks)).filter(([k, h]) => typeof h === "string" && /^[0-9a-f]{8}$/.test(h) && k.length <= 120).slice(0, 300));
   const strings = (x) => Array.isArray(x) ? x.filter((y) => typeof y === "string") : [];
   const card = record(v.card);
   return {
@@ -1249,6 +1270,7 @@ function readSession(value) {
     turns: turns.length ? turns : freshSession("full").turns,
     blocks,
     ...Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: "x", turns: [], blocks: v.undo }).blocks } : {},
+    ...Object.keys(sentLooks).length ? { sentLooks } : {},
     ...typeof src.characterId === "string" ? { source: { characterId: src.characterId, name: String(src.name ?? ""), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...typeof src.paigeBookId === "string" ? { paigeBookId: src.paigeBookId } : {}, ...typeof src.castEntryId === "string" ? { castEntryId: src.castEntryId, cast: String(src.cast ?? "") } : {} } } : {},
     ...typeof rp.chatId === "string" ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? ""), ...REACHES.includes(rp.reach) ? { reach: rp.reach } : {} } } : {},
     ...typeof card.characterId === "string" ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ""), personaId: typeof card.personaId === "string" ? card.personaId : undefined, name: String(card.name ?? ""), savedAt: Number(card.savedAt) || 0 } } : {}
@@ -1636,7 +1658,7 @@ function setupBackend(api) {
             throw new Error(`Grant Paige the ${permission} permission in Extensions to make the card.`);
         const current = session();
         if (current.source)
-          return await saveFixes(current, input.asCopy === true, typeof input.name === "string" ? input.name : "", input.sendLooks === true);
+          return await saveFixes(current, input.asCopy === true, typeof input.name === "string" ? input.name : "", input.sendLooks === true, input.sendChanged === true);
         if (!current.blocks.some((b) => b.type !== "First message"))
           throw new Error("The notebook is empty. Build something with Paige first.");
         const plan = planCard(current.blocks, { name: typeof input.name === "string" ? input.name : "" });
@@ -1678,7 +1700,7 @@ function setupBackend(api) {
         broadcast();
         let cast = null;
         if (input.sendLooks === true)
-          cast = await sendLooks(current, plan.card.name);
+          cast = await sendNewLooks(current, plan.card.name, input.sendChanged === true);
         return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: [...plan.notes, ...pictureNote], cast, session: current };
       }
       if (r.action === "sendLooks")
@@ -1720,6 +1742,13 @@ function setupBackend(api) {
           return ["The card\u2019s picture couldn\u2019t be set. Add it in Lumiverse if you like."];
         }
       }
+      async function sendNewLooks(current, cardName, withChanged, status = lookStatus(current.blocks, current.sentLooks)) {
+        const { added, changed } = status;
+        const names = [...added, ...withChanged ? changed : []];
+        if (names.length)
+          return await sendLooks(current, cardName, names);
+        return { state: "skipped", message: changed.length ? `No new looks, so nothing went to LumiCast. ${changed.join(", ")} changed; tick \u201CAlso re-send changed looks\u201D if you want new profiles for them.` : "No looks are new or changed, so nothing went to LumiCast." };
+      }
       async function sendLooks(current, cardName, only) {
         const wanted = only && new Set(only.map((n) => n.trim().toLowerCase()));
         const looks = looksFrom(current.blocks).filter((l) => !wanted || wanted.has(l.name.trim().toLowerCase()));
@@ -1735,6 +1764,8 @@ function setupBackend(api) {
           const answer = record(await pool.read("lumicast.paige.start"));
           if (answer.ok !== true)
             return { state: "failed", message: typeof answer.message === "string" ? answer.message.slice(0, 300) : "LumiCast didn't take them." };
+          current.sentLooks = { ...current.sentLooks, ...Object.fromEntries(looks.map((l) => [l.name.toLowerCase(), lookHash(l)])) };
+          await persist();
           return { state: "started", message: `LumiCast is working on ${looks.length} ${looks.length === 1 ? "look" : "looks"}: ${looks.map((l) => l.name).join(", ")}. They land in Lumi Studio as they finish.` };
         } catch (error) {
           const message = error instanceof Error ? error.message : "";
@@ -1824,10 +1855,10 @@ ${body}` }],
         const result = roleplayText(rp.chatName, messages.filter((m) => m.role !== "system").map((m) => ({ name: m.name, isUser: m.is_user, content: cleaner.clean(m.content ?? "", m.is_user) })), REACH_BUDGET[rp.reach ?? "recent"]);
         return { ...result, words: result.text.split(/\s+/).length, cleaned: scripts ? cleaner.count : null };
       }
-      async function saveFixes(current, asCopy, copyName, looks) {
+      async function saveFixes(current, asCopy, copyName, looks, sendChanged) {
         const source = current.source;
         const plan = planFix(current.blocks, source);
-        const lookChanges = changedLooks(current.blocks);
+        const lookNow = lookStatus(current.blocks, current.sentLooks);
         if (plan.persona && !api.permissions.has("personas"))
           throw new Error("Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.");
         const original = await api.characters.get(source.characterId, userId);
@@ -1910,7 +1941,7 @@ ${body}` }],
         broadcast();
         let cast = null;
         if (looks)
-          cast = lookChanges.length ? await sendLooks(current, target.name, lookChanges) : { state: "skipped", message: "Nobody\u2019s look changed, so nothing went to LumiCast." };
+          cast = await sendNewLooks(current, target.name, sendChanged, lookNow);
         return { copy: asCopy, changes: plan.summary, updated: !asCopy, name: target.name, entries: plan.updates.length + plan.create.length, greetings: plan.patch.first_mes !== undefined ? (plan.patch.first_mes ? 1 : 0) + (plan.patch.alternate_greetings?.length ?? 0) : 0, personaName, personaNote: "", notes, cast, session: current };
       }
     })().then((result) => reply(result)).catch((error) => {

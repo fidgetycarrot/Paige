@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { castList, changedLooks, parseBlocks, upsertBlocks } from '../src/blocks';
+import { castList, lookHash, looksFrom, lookStatus, parseBlocks, upsertBlocks } from '../src/blocks';
 import { cardToBlocks, entryFor, planFix, type CardIn, type EntryIn } from '../src/fix';
 import { buildMessages, roleplayText } from '../src/prompt';
 import { thinkingFor } from '../src/backend';
@@ -108,9 +108,26 @@ test('fixing steps Light thinking up to Medium, and leaves other settings alone'
 
 test('only new or changed looks count when fixing', () => {
   const { blocks } = cardToBlocks(card, entries, id, 1);
-  expect(changedLooks(blocks)).toEqual([]);
+  expect(lookStatus(blocks)).toEqual({ added: [], changed: [] });
   const sheet = upsertBlocks(blocks, parseBlocks('```\nSide character\nName: Mara Venn\n## Look\nShaved head.\n```\n```\nSide character\nName: Ash\n## Look\nTall.\n```'), 2, id).sheet;
-  expect(changedLooks(sheet)).toEqual(['Mara Venn', 'Ash']);
+  expect(lookStatus(sheet)).toEqual({ added: ['Ash'], changed: ['Mara Venn'] });
+});
+
+test('a new role or attitude isn’t a new look; age, race and clothes are', () => {
+  const side = (identity: string, look: string) => [{ id: 'i', type: 'Side character' as const, name: 'Illya', body: `Name: Illya\n## Identity\n${identity}\n## Look\n${look}`, updatedAt: 1, origin: 'Name: Illya\n## Identity\nAge: 22\nRace / species: Half-elf (court stray)\nRole: Touch-starved runaway.\n## Look\nSilver hair, **green** eyes.' }];
+  expect(lookStatus(side('Age: 22\nRace / species: Half-elf (court stray)\nRole: Unapologetic, luxury-loving runaway.', 'Silver hair, green eyes.')).changed).toEqual([]);
+  expect(lookStatus(side('Age: 23\nRace / species: Half-elf (court stray)\nRole: Touch-starved runaway.', 'Silver hair, green eyes.')).changed).toEqual(['Illya']);
+  expect(lookStatus(side('Age: 22\nRace / species: Half-elf (court stray)\nRole: Touch-starved runaway.', 'Silver hair, green eyes. Usual outfit: a sundress.')).changed).toEqual(['Illya']);
+});
+
+test('what was last sent to LumiCast is the baseline', () => {
+  const made = parseBlocks('```\nSide character\nName: Ash\n## Look\nTall.\n```');
+  const sheet = upsertBlocks([], made, 1, id).sheet;
+  expect(lookStatus(sheet)).toEqual({ added: ['Ash'], changed: [] });
+  const sent = { ash: lookHash(looksFrom(sheet)[0]) };
+  expect(lookStatus(sheet, sent)).toEqual({ added: [], changed: [] });
+  const taller = upsertBlocks(sheet, parseBlocks('```\nSide character\nName: Ash\n## Look\nVery tall.\n```'), 2, id).sheet;
+  expect(lookStatus(taller, sent)).toEqual({ added: [], changed: ['Ash'] });
 });
 
 describe('bringing back a narrator card', () => {

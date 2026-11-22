@@ -1,5 +1,5 @@
 import type { SpindleAPI, GenerationRequestDTO } from 'lumiverse-spindle-types';
-import { BLOCK_TYPES, changedLooks, looksFrom, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
+import { BLOCK_TYPES, lookHash, looksFrom, lookStatus, parseBlocks, planCard, rememberLines, unfinishedPiece, upsertBlocks, type Block, type BlockType, type Mode } from './blocks';
 import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
@@ -73,12 +73,13 @@ function readSession(value: unknown): Session | null {
       ...(typeof field === 'string' ? { field: field as never } : {}), ...(typeof entryId === 'string' ? { entryId } : {}), ...(typeof bookId === 'string' ? { bookId } : {}), ...(foreign === true ? { foreign: true } : {}),
     }))(record(b.source)) } : {}),
   }));
-  const src = record(v.source), rp = record(v.roleplay);
+  const src = record(v.source), rp = record(v.roleplay), sentLooks = Object.fromEntries(Object.entries(record(v.sentLooks)).filter(([k, h]) => typeof h === 'string' && /^[0-9a-f]{8}$/.test(h) && k.length <= 120).slice(0, 300)) as Record<string, string>;
   const strings = (x: unknown) => Array.isArray(x) ? x.filter((y): y is string => typeof y === 'string') : [];
   const card = record(v.card);
   return {
     version: 1, id: v.id, mode: v.mode === 'quick' ? 'quick' : 'full', startedAt: Number(v.startedAt) || Date.now(), turns: turns.length ? turns : freshSession('full').turns, blocks,
     ...(Array.isArray(v.undo) ? { undo: readSession({ version: 1, id: 'x', turns: [], blocks: v.undo })!.blocks } : {}),
+    ...(Object.keys(sentLooks).length ? { sentLooks } : {}),
     ...(typeof src.characterId === 'string' ? { source: { characterId: src.characterId, name: String(src.name ?? ''), bookIds: strings(src.bookIds), entryIds: strings(src.entryIds), greetings: strings(src.greetings), skipped: Number(src.skipped) || 0, broughtAt: Number(src.broughtAt) || 0, ...(typeof src.paigeBookId === 'string' ? { paigeBookId: src.paigeBookId } : {}), ...(typeof src.castEntryId === 'string' ? { castEntryId: src.castEntryId, cast: String(src.cast ?? '') } : {}) } } : {}),
     ...(typeof rp.chatId === 'string' ? { roleplay: { on: rp.on === true, chatId: rp.chatId, chatName: String(rp.chatName ?? ''), ...(REACHES.includes(rp.reach as Reach) ? { reach: rp.reach as Reach } : {}) } } : {}),
     ...(typeof card.characterId === 'string' ? { card: { characterId: card.characterId, worldBookId: String(card.worldBookId ?? ''), personaId: typeof card.personaId === 'string' ? card.personaId : undefined, name: String(card.name ?? ''), savedAt: Number(card.savedAt) || 0 } } : {}),
@@ -380,7 +381,7 @@ export function setupBackend(api: SpindleAPI) {
       if (r.action === 'makeCard') {
         for (const permission of ['characters', 'world_books']) if (!api.permissions.has(permission)) throw new Error(`Grant Paige the ${permission} permission in Extensions to make the card.`);
         const current = session();
-        if (current.source) return await saveFixes(current, input.asCopy === true, typeof input.name === 'string' ? input.name : '', input.sendLooks === true);
+        if (current.source) return await saveFixes(current, input.asCopy === true, typeof input.name === 'string' ? input.name : '', input.sendLooks === true, input.sendChanged === true);
         if (!current.blocks.some(b => b.type !== 'First message')) throw new Error('The notebook is empty. Build something with Paige first.');
         const plan = planCard(current.blocks, { name: typeof input.name === 'string' ? input.name : '' });
         if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
@@ -415,7 +416,7 @@ export function setupBackend(api: SpindleAPI) {
         current.card = { characterId: character.id, worldBookId: book.id, personaId, name: character.name, savedAt: Date.now() };
         await persist(); broadcast();
         let cast: CastStatus | null = null;
-        if (input.sendLooks === true) cast = await sendLooks(current, plan.card.name);
+        if (input.sendLooks === true) cast = await sendNewLooks(current, plan.card.name, input.sendChanged === true);
         return { updated: !!old, name: character.name, entries: plan.entries.length, greetings: (plan.card.first_mes ? 1 : 0) + plan.card.alternate_greetings.length, personaName, personaNote, notes: [...plan.notes, ...pictureNote], cast, session: current } satisfies CardResult;
       }
 
@@ -453,6 +454,14 @@ export function setupBackend(api: SpindleAPI) {
         } catch { return ['The card’s picture couldn’t be set. Add it in Lumiverse if you like.']; }
       }
 
+      /** New looks always; changed ones only when asked, since LumiCast makes a second profile rather than touch one you may have tweaked. */
+      async function sendNewLooks(current: Session, cardName: string, withChanged: boolean, status = lookStatus(current.blocks, current.sentLooks)): Promise<CastStatus> {
+        const { added, changed } = status;
+        const names = [...added, ...(withChanged ? changed : [])];
+        if (names.length) return await sendLooks(current, cardName, names);
+        return { state: 'skipped', message: changed.length ? `No new looks, so nothing went to LumiCast. ${changed.join(', ')} changed; tick “Also re-send changed looks” if you want new profiles for them.` : 'No looks are new or changed, so nothing went to LumiCast.' };
+      }
+
       /** Shares everyone's looks, then asks LumiCast to turn them into Lumi Studio characters. LumiCast does the rest in the background. */
       /** only: send just these names (Choose who to send lets you pick), so the ones already in Lumi Studio aren't copied. */
       async function sendLooks(current: Session, cardName: string, only?: string[]): Promise<CastStatus> {
@@ -466,6 +475,9 @@ export function setupBackend(api: SpindleAPI) {
         try {
           const answer = record(await pool.read('lumicast.paige.start'));
           if (answer.ok !== true) return { state: 'failed', message: typeof answer.message === 'string' ? answer.message.slice(0, 300) : 'LumiCast didn\'t take them.' };
+          // Remember what LumiCast got, so the same look isn't sent again and made into a second profile.
+          current.sentLooks = { ...current.sentLooks, ...Object.fromEntries(looks.map(l => [l.name.toLowerCase(), lookHash(l)])) };
+          await persist();
           return { state: 'started', message: `LumiCast is working on ${looks.length} ${looks.length === 1 ? 'look' : 'looks'}: ${looks.map(l => l.name).join(', ')}. They land in Lumi Studio as they finish.` };
         } catch (error) {
           const message = error instanceof Error ? error.message : '';
@@ -541,10 +553,11 @@ export function setupBackend(api: SpindleAPI) {
       }
 
       /** Saves the notebook's changes back to the card it came from, or to a new copy of it. */
-      async function saveFixes(current: Session, asCopy: boolean, copyName: string, looks: boolean): Promise<CardResult> {
+      async function saveFixes(current: Session, asCopy: boolean, copyName: string, looks: boolean, sendChanged: boolean): Promise<CardResult> {
         const source = current.source!;
         const plan = planFix(current.blocks, source);
-        const lookChanges = changedLooks(current.blocks);
+        // Worked out now: after saving, the card is read in again and everything matches it.
+        const lookNow = lookStatus(current.blocks, current.sentLooks);
         if (plan.persona && !api.permissions.has('personas')) throw new Error('Grant Paige the personas permission in Extensions to make your persona, or delete the persona from the notebook.');
         const original = await api.characters.get(source.characterId, userId);
         if (!original) throw new Error('That card isn’t in Lumiverse anymore. Tick “Save as a copy” to save the fixes as a new card.');
@@ -611,7 +624,7 @@ export function setupBackend(api: SpindleAPI) {
         await persist(); broadcast();
         // Only people whose look changed, or who are new, go to LumiCast; everyone else is already in Lumi Studio.
         let cast: CastStatus | null = null;
-        if (looks) cast = lookChanges.length ? await sendLooks(current, target.name, lookChanges) : { state: 'skipped', message: 'Nobody’s look changed, so nothing went to LumiCast.' };
+        if (looks) cast = await sendNewLooks(current, target.name, sendChanged, lookNow);
         return { copy: asCopy, changes: plan.summary, updated: !asCopy, name: target.name, entries: plan.updates.length + plan.create.length, greetings: plan.patch.first_mes !== undefined ? (plan.patch.first_mes ? 1 : 0) + (plan.patch.alternate_greetings?.length ?? 0) : 0, personaName, personaNote: '', notes, cast, session: current };
       }
     })().then(result => reply(result)).catch(error => {

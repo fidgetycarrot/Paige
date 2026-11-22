@@ -185,6 +185,31 @@ ${parts.join(`
   }
   return looks;
 }
+var LOOK_IDENTITY = /^[ \t]*(?:[-*•][ \t]*)?[*_]*(?:full name|name|apparent age|age|gender|sex|pronouns|race|species|race \/ species|height)[*_]*[ \t]*:/i;
+function lookHash(look) {
+  const text = look.description.split(/\n(?=##\s)/).map((part) => /^##\s*identity\b/i.test(part) ? part.split(`
+`).filter((line) => LOOK_IDENTITY.test(line)).join(`
+`) : part).join(`
+`).replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  let hash = 2166136261;
+  for (let i = 0;i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+function lookStatus(blocks, sent = {}) {
+  const before = new Map(looksFrom(blocks.filter((b) => b.origin !== undefined).map((b) => ({ ...b, body: b.origin }))).map((l) => [l.name.toLowerCase(), lookHash(l)]));
+  const added = [], changed = [];
+  for (const look of looksFrom(blocks)) {
+    const key = look.name.toLowerCase(), base = sent[key] ?? before.get(key);
+    if (base === undefined)
+      added.push(look.name);
+    else if (base !== lookHash(look))
+      changed.push(look.name);
+  }
+  return { added, changed };
+}
 
 // src/contracts.ts
 var ABOUT_MAX = 1500;
@@ -1036,6 +1061,15 @@ function setup(ctx, options = {}) {
   const looksText = el("span", "Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw");
   const looksRow = el("label", undefined, "pg-check");
   looksRow.append(looks, looksText);
+  const lookAgain = el("input");
+  lookAgain.type = "checkbox";
+  const lookAgainText = el("span", "");
+  const lookAgainRow = el("label", undefined, "pg-check");
+  lookAgainRow.append(lookAgain, lookAgainText);
+  lookAgainRow.hidden = true;
+  looks.addEventListener("change", () => {
+    lookAgainRow.hidden = !looks.checked || !lookAgainText.dataset.names;
+  });
   const makeButton = el("button", "Make my card", "pg-btn pg-primary");
   makeButton.type = "button";
   const resendButton = el("button", "Choose who to send", "pg-btn");
@@ -1067,7 +1101,7 @@ function setup(ctx, options = {}) {
   cardPics.setAttribute("aria-label", "Card picture");
   const cardPicField = el("div", undefined, "pg-field");
   cardPicField.append(el("span", "Card picture"), cardPics, el("small", "Use a picture you sent as the card’s picture. Left as it is unless you pick one.", "pg-note"));
-  make.append(makeTitle, makeHint, copyRow, nameField, cardPicField, looksRow, unsaved, makeRow, pick, makeStatus, cast);
+  make.append(makeTitle, makeHint, copyRow, nameField, cardPicField, looksRow, lookAgainRow, unsaved, makeRow, pick, makeStatus, cast);
   function renderCardPics() {
     const pics = (session?.turns ?? []).flatMap((t) => t.picture && !t.picture.id.startsWith("local-") ? [t.picture.id] : []);
     if (cardPicture && !pics.includes(cardPicture))
@@ -1101,8 +1135,9 @@ function setup(ctx, options = {}) {
   makeButton.addEventListener("click", () => void act(async () => {
     const fixing = !!session?.source, asCopy = fixing && copyBox.checked;
     makeNotify(fixing ? asCopy ? "Saving the copy…" : "Saving the fixes…" : "Making the card…");
-    const result = await rpc.request("makeCard", { name: cardName.value, sendLooks: looks.checked, asCopy, ...cardPicture ? { pictureId: cardPicture } : {} });
+    const result = await rpc.request("makeCard", { name: cardName.value, sendLooks: looks.checked, sendChanged: lookAgain.checked && !lookAgainRow.hidden, asCopy, ...cardPicture ? { pictureId: cardPicture } : {} });
     session = result.session;
+    lookAgain.checked = false;
     if (cardPicture && !result.notes.some((n) => n.includes("picture couldn’t"))) {
       result.notes.push("The card’s picture is set.");
       cardPicture = "";
@@ -1892,7 +1927,12 @@ function setup(ctx, options = {}) {
       cardName.value = session.card.name;
     const fixing = session?.source;
     copyRow.hidden = !fixing;
-    looksText.textContent = fixing ? "Also send looks that are new or changed to LumiCast. Everyone else is left alone in Lumi Studio." : "Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw";
+    const lookNow = lookStatus(blocks, session?.sentLooks);
+    const firstTime = !fixing && !session?.card;
+    looksText.textContent = firstTime ? "Also send everyone’s looks to LumiCast, so they show up in Lumi Studio ready to draw" : lookNow.added.length ? `Also send new looks to LumiCast: ${lookNow.added.join(", ")}` : "Also send new looks to LumiCast (none right now)";
+    lookAgainText.dataset.names = firstTime ? "" : lookNow.changed.join(", ");
+    lookAgainText.textContent = `Also re-send changed looks: ${lookNow.changed.join(", ")}. LumiCast makes a new profile for each and leaves the old one alone.`;
+    lookAgainRow.hidden = !looks.checked || !lookAgainText.dataset.names;
     if (!fixing)
       copyBox.checked = false;
     nameField.hidden = !!fixing && !copyBox.checked;

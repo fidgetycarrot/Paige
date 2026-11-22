@@ -203,10 +203,32 @@ export function looksFrom(blocks: Block[]): Look[] {
   return looks;
 }
 
-/** Names whose look is new or different from when the card was brought in. */
-export function changedLooks(blocks: Block[]): string[] {
-  const before = new Map(looksFrom(blocks.filter(b => b.origin !== undefined).map(b => ({ ...b, body: b.origin! }))).map(l => [l.name.toLowerCase(), l.description]));
-  return looksFrom(blocks).filter(l => before.get(l.name.toLowerCase()) !== l.description).map(l => l.name);
+/** The Identity lines that change a picture. Role, goal, attitude and the rest don't. */
+const LOOK_IDENTITY = /^[ \t]*(?:[-*•][ \t]*)?[*_]*(?:full name|name|apparent age|age|gender|sex|pronouns|race|species|race \/ species|height)[*_]*[ \t]*:/i;
+
+/** A short fingerprint of what a picture is drawn from: the look sections, plus only the Identity lines that matter. Formatting doesn't count. */
+export function lookHash(look: Look): string {
+  const text = look.description.split(/\n(?=##\s)/).map(part => /^##\s*identity\b/i.test(part)
+    ? part.split('\n').filter(line => LOOK_IDENTITY.test(line)).join('\n')
+    : part).join('\n').replace(/[*_`]+/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Who LumiCast hasn't seen (added) and whose look is different from what it last got (changed). What it last got is what
+ * Paige sent it; for a card brought back to fix that Paige never sent, it's the card as it was brought in.
+ */
+export function lookStatus(blocks: Block[], sent: Record<string, string> = {}): { added: string[]; changed: string[] } {
+  const before = new Map(looksFrom(blocks.filter(b => b.origin !== undefined).map(b => ({ ...b, body: b.origin! }))).map(l => [l.name.toLowerCase(), lookHash(l)]));
+  const added: string[] = [], changed: string[] = [];
+  for (const look of looksFrom(blocks)) {
+    const key = look.name.toLowerCase(), base = sent[key] ?? before.get(key);
+    if (base === undefined) added.push(look.name);
+    else if (base !== lookHash(look)) changed.push(look.name);
+  }
+  return { added, changed };
 }
 
 export const PLAYER_RULE = 'This is the human-controlled player. These are starting facts, not a script. During live play the human supplies their actions, dialogue, thoughts, feelings and decisions.';

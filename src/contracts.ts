@@ -41,6 +41,8 @@ export interface Session {
   source?: CardSource;
   /** Let Paige read the end of one of that card's chats with every message. Off unless switched on. */
   roleplay?: { on: boolean; chatId: string; chatName: string; reach?: Reach };
+  /** Fingerprint of each look Paige last sent to LumiCast, by lowercase name, so only new or changed looks go again. */
+  sentLooks?: Record<string, string>;
 }
 /** How far back Paige reads the roleplay, in characters of story (trackers taken out first). */
 export type Reach = 'recent' | 'more' | 'lots' | 'all';
