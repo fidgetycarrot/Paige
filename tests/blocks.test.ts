@@ -320,3 +320,11 @@ describe('narrator cards', () => {
     expect(system).not.toContain('what to build first (menu:');
   });
 });
+
+test('Paige thinks it through and avoids stock names', () => {
+  const system = String(buildMessages({ mode: 'full', blocks: [], turns: [] })[0].content);
+  expect(system).toContain('A question isn\'t an order.');
+  expect(system).toContain('find the cause first');
+  expect(system).toContain('Offer only the fifth');
+  expect(system).toContain('Thorne, Blackwood');
+});

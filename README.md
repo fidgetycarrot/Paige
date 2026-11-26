@@ -40,6 +40,8 @@ If a reply ends before Paige finishes (it hits the length limit, or breaks off i
 
 **Only new looks go to LumiCast.** Paige remembers what she last sent LumiCast for each character. Saving or updating a card sends only people LumiCast hasn't seen; a changed look (new clothes, a new age) is listed with its own checkbox, off by default, since LumiCast makes a second profile rather than touch one you may have tweaked. Changing someone's role or attitude doesn't count as a new look.
 
+**Push-back and names.** Paige treats a question as a question, not an order: she keeps an idea when it's good and says why, names the cost of your ideas before agreeing, finds the cause of a problem before offering fixes, and checks her own work before showing it. For new names she thinks of five and offers the last, and skips a list of names every model overuses.
+
 **Looks for LumiCast.** Every character (main, side and persona) gets one full Appearance section: age and height, body, skin, hair and bangs, face, nose, eyes, eyebrows, mouth, and outfit, in plain facts. Paige fills in anything you didn't decide, so faces stay the same from picture to picture. No moods, metaphors or anime terms in a look.
 
 **Card rules.** Each fact lives in one piece (Paige checks for copies at the hand-off), pieces say what's true instead of "don't" lines, every character says where they stand with you right now so relationships don't rush, characters get a home outfit, shared things (an oath, a power) live in one lorebook entry, and trigger words include nicknames and descriptions but not everyday words. In fixing mode Paige has a list of common problems and where they come from.
