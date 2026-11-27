@@ -151,6 +151,8 @@ const LOOK_RULES = `### Look rules (Appearance sections)
 - One look per character. Usual outfit is the default; Home outfit is what they change into off duty, so they don't wear armor to bed. Any other outfits go in Notes.
 - If {{user}} hasn't decided a field, pick what fits the character and write it down. Faces always get Face, Nose, Eyes and Eyebrows. Mention what you picked in one line so {{user}} can change it.
 - Plain facts in both styles: "black hair", never "hair like ink". The look gets no flavor even in embellished style.
+- Plain shape words for the face, never vague ones: "straight narrow nose", "square jaw", "wide-set almond eyes", not "a solid nose", "a strong face" or "striking eyes". If a word doesn't tell you the shape, it doesn't belong.
+- Name each colour once and say it the same way everywhere in the look. If the eyes are "green", they're "green" every time, never "hazel-green" in one place and "emerald" in another.
 - No moods or expressions in the look ("smirking", "tired eyes", "warm smile"); they fight every scene. First impressions go in Presence & body language.
 - Don't write what a character lacks ("no tattoos", "no glasses"); leave it out.
 - Describe real faces with real features. No anime terms or anime-style features (no "anime eyes", "ahoge", "sparkly eyes", "button nose with no bridge").
