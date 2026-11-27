@@ -117,6 +117,12 @@ describe('Paige backend', () => {
     expect(made).toMatchObject({ name: 'Jory Kett', entries: 1, greetings: 1, personaName: 'Wes', updated: false });
     expect(made.cast.state).toBe('started');
     expect((host.pool.get('paige.cast') as { characters: { name: string }[] }).characters.map(c => c.name)).toEqual(['Jory Kett', 'Mara', 'Wes']);
+    const sent = host.pool.get('paige.cast') as { story: { cardId: string; cardName: string }; characters: { name: string; story: { cardId: string; cardName: string; role?: string } }[] };
+    const cardId = [...host.characters.keys()][0];
+    expect(sent.story).toEqual({ cardId, cardName: 'Jory Kett' });
+    expect(sent.characters.map(c => c.story)).toEqual([
+      { cardId, cardName: 'Jory Kett', role: 'lead' }, { cardId, cardName: 'Jory Kett', role: 'regular' }, { cardId, cardName: 'Jory Kett' },
+    ]);
     // Making it again with nothing new: nobody goes to LumiCast twice.
     host.pool.delete('paige.cast');
     const repeat = await host.call<{ cast: { state: string; message: string } }>('makeCard', { name: '', sendLooks: true });

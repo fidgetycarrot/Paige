@@ -471,7 +471,10 @@ export function setupBackend(api: SpindleAPI) {
         if (!looks.length) return { state: 'skipped', message: 'No one in the notebook has a look section, so nothing went to LumiCast.' };
         const pool = (api as unknown as { rpcPool?: { sync?: (e: string, v: unknown, p?: { requires?: string[] }) => string; read?: (e: string) => Promise<unknown> } }).rpcPool;
         if (typeof pool?.sync !== 'function' || typeof pool.read !== 'function') return { state: 'failed', message: 'This Lumiverse version can\'t share data between extensions.' };
-        pool.sync('cast', { version: 1, sessionId: current.id, sentAt: Date.now(), userId: userId ?? '', card: cardName, characters: looks }, { requires: [] });
+        // Which story each person belongs to, so Lumi Studio files them under the card (its Library groups faces by story).
+        const cardId = current.card?.characterId ?? '';
+        const story = { ...(cardId ? { cardId } : {}), cardName };
+        pool.sync('cast', { version: 1, sessionId: current.id, sentAt: Date.now(), userId: userId ?? '', card: cardName, story, characters: looks.map(l => ({ ...l, story: { ...story, ...(l.role ? { role: l.role } : {}) } })) }, { requires: [] });
         try {
           const answer = record(await pool.read('lumicast.paige.start'));
           if (answer.ok !== true) return { state: 'failed', message: typeof answer.message === 'string' ? answer.message.slice(0, 300) : 'LumiCast didn\'t take them.' };

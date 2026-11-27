@@ -152,6 +152,9 @@ const LOOK_RULES = `### Look rules (Appearance sections)
 - If {{user}} hasn't decided a field, pick what fits the character and write it down. Faces always get Face, Nose, Eyes and Eyebrows. Mention what you picked in one line so {{user}} can change it.
 - Plain facts in both styles: "black hair", never "hair like ink". The look gets no flavor even in embellished style.
 - Plain shape words for the face, never vague ones: "straight narrow nose", "square jaw", "wide-set almond eyes", not "a solid nose", "a strong face" or "striking eyes". If a word doesn't tell you the shape, it doesn't belong.
+- Every character gets a specific hairstyle (the cut and how it sits, not just the length) and one or two signature details: a lasting mark, makeup they always wear, or an accessory they always have on. That's what makes them recognisable from one picture to the next.
+- Across the cast, nobody shares body words or the same hair-and-eye combination with someone else. Check the other looks already on the card before writing a new one. If two people really share a build, their faces and signature details carry the difference; pictures blend people who are described alike.
+- Say each part of the body once. Don't stack the same idea ("curvy", "heavy curves", "slender frame with heavy curves"), and don't use words that pull against each other ("slim" next to "curvy" or "wide hips"): pick the overall shape once.
 - Name each colour once and say it the same way everywhere in the look. If the eyes are "green", they're "green" every time, never "hazel-green" in one place and "emerald" in another.
 - No moods or expressions in the look ("smirking", "tired eyes", "warm smile"); they fight every scene. First impressions go in Presence & body language.
 - Don't write what a character lacks ("no tattoos", "no glasses"); leave it out.

@@ -237,6 +237,9 @@ describe('looks for LumiCast', () => {
     expect(system).toContain('### Look rules');
     expect(system).toContain('Plain shape words for the face');
     expect(system).toContain('Name each colour once');
+    expect(system).toContain('nobody shares body words');
+    expect(system).toContain('Say each part of the body once.');
+    expect(system).toContain('one or two signature details');
     expect(system).toContain('first impression (what people think at first glance)');
     expect(system).toContain('### Card rules');
     expect(system).toContain('the blue-haired maid');

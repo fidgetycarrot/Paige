@@ -182,7 +182,8 @@ export function personaName(block: Block): string {
   return '';
 }
 
-export interface Look { name: string; aliases: string[]; kind: 'character' | 'persona'; description: string }
+/** role: how big a part they have, so Lumi Studio can put the leads first. Personas have none. */
+export interface Look { name: string; aliases: string[]; kind: 'character' | 'persona'; role?: 'lead' | 'regular'; description: string }
 
 /** What LumiCast needs to draw someone: who they are, what they look like. Clothes go in too; LumiCast keeps them apart. */
 export function looksFrom(blocks: Block[]): Look[] {
@@ -198,7 +199,8 @@ export function looksFrom(blocks: Block[]): Look[] {
     // A persona with no real name yet can't be told apart in Lumi Studio, so it waits until it has one.
     const name = b.type === 'Persona' ? personaName(b) : b.name;
     if (!name) continue;
-    looks.push({ name, aliases: listOf(fieldOf(b.body, 'Aliases')).slice(0, 8), kind, description: `${name} — appearance:\n\n${parts.join('\n\n').replace(/\{\{\s*user\s*\}\}/gi, name)}`.slice(0, 12_000) });
+    const role = b.type === 'Main character' ? 'lead' as const : b.type === 'Side character' ? 'regular' as const : undefined;
+    looks.push({ name, aliases: listOf(fieldOf(b.body, 'Aliases')).slice(0, 8), kind, ...(role ? { role } : {}), description: `${name} — appearance:\n\n${parts.join('\n\n').replace(/\{\{\s*user\s*\}\}/gi, name)}`.slice(0, 12_000) });
   }
   return looks;
 }

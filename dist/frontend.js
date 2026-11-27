@@ -177,7 +177,8 @@ function looksFrom(blocks) {
     const name = b.type === "Persona" ? personaName(b) : b.name;
     if (!name)
       continue;
-    looks.push({ name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, description: `${name} — appearance:
+    const role = b.type === "Main character" ? "lead" : b.type === "Side character" ? "regular" : undefined;
+    looks.push({ name, aliases: listOf(fieldOf(b.body, "Aliases")).slice(0, 8), kind, ...role ? { role } : {}, description: `${name} — appearance:
 
 ${parts.join(`
 
