@@ -271,7 +271,8 @@ export function planCard(blocks: Block[], options: { name?: string } = {}): Card
   const cast = narrators.length ? castList(blocks) : '';
   if (cast) entries.push({ comment: 'Cast list', key: [], content: cast, constant: true });
   // A main character who isn't in the description rides in the lorebook, always on.
-  for (const extra of narrators.length ? mains : mains.slice(1)) entries.push({ comment: `Main character · ${extra.name}`, key: [extra.name, ...listOf(fieldOf(extra.body, 'Aliases'))], content: `[Main character]\n${extra.body}`, constant: true });
+  // On a narrator card they load when they come up (the cast list keeps everyone known); a second lead on a character card stays always on.
+  for (const extra of narrators.length ? mains : mains.slice(1)) entries.push({ comment: `Main character · ${extra.name}`, key: [extra.name, ...listOf(fieldOf(extra.body, 'Aliases'))], content: `[Main character]\n${extra.body}`, constant: !narrators.length });
   for (const extra of scenarios.slice(1)) entries.push({ comment: 'Scenario (more)', key: [], content: `[Scenario]\n${extra.body}`, constant: true });
   for (const side of of('Side character')) {
     entries.push({ comment: `Side character · ${side.name}`, key: [side.name, ...listOf(fieldOf(side.body, 'Aliases'))].slice(0, 12), content: `[Side character]\n${side.body}`, constant: false });

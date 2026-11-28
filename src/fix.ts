@@ -71,7 +71,7 @@ export function cardToBlocks(card: CardIn, entries: EntryIn[], id: () => string 
 }
 
 /** A notebook piece as a lorebook entry, in Paige's usual layout, or back in the original layout for someone else's entry. */
-export function entryFor(block: Block): EntryPlan & { foreign: boolean } {
+export function entryFor(block: Block, narratorCard = false): EntryPlan & { foreign: boolean } {
   if (block.type === 'Lore' || block.source?.foreign) {
     let body = block.body.replace(/\r/g, '');
     const triggers = fieldOf(body, 'Trigger words');
@@ -82,7 +82,7 @@ export function entryFor(block: Block): EntryPlan & { foreign: boolean } {
     return { comment: block.name, key: key.length || always ? key : [block.name], content: body, constant: always, foreign: true };
   }
   const aliases = listOf(fieldOf(block.body, 'Aliases'));
-  if (block.type === 'Main character') return { comment: `Main character · ${block.name}`, key: [block.name, ...aliases], content: `[Main character]\n${block.body}`, constant: true, foreign: false };
+  if (block.type === 'Main character') return { comment: `Main character · ${block.name}`, key: [block.name, ...aliases], content: `[Main character]\n${block.body}`, constant: !narratorCard, foreign: false };
   if (block.type === 'Scenario') return { comment: 'Scenario (more)', key: [], content: `[Scenario]\n${block.body}`, constant: true, foreign: false };
   if (block.type === 'Side character') return { comment: `Side character · ${block.name}`, key: [block.name, ...aliases].slice(0, 12), content: `[Side character]\n${block.body}`, constant: false, foreign: false };
   const triggers = listOf(fieldOf(block.body, 'Trigger words'));
@@ -107,6 +107,7 @@ export interface FixPlan {
 
 export function planFix(blocks: Block[], source: CardSource): FixPlan {
   const notes: string[] = [], summary: string[] = [];
+  const narratorCard = blocks.some(b => b.type === 'Narrator');
   const patch: FixPlan['patch'] = {};
   const updates: FixPlan['updates'] = [], create: EntryPlan[] = [];
   const fromField = (field: CardField) => blocks.find(b => b.source?.field === field);
@@ -122,19 +123,19 @@ export function planFix(blocks: Block[], source: CardSource): FixPlan {
       if (patch.description === undefined || fromField('description')?.type !== 'Narrator') {
         const was = fromField('description');
         patch.description = `[Narrator]\n${block.body.trim()}`; summary.push('card description (now a narrator card)');
-        if (was?.type === 'Main character') { create.push(entryFor({ ...was, body: withoutAddedName(was) })); summary.push(`new lorebook entry: ${was.name}`); }
+        if (was?.type === 'Main character') { create.push(entryFor({ ...was, body: withoutAddedName(was) }, true)); summary.push(`new lorebook entry: ${was.name}`); }
       } else notes.push('There is already a narrator, so the second one was left out.');
     } else if (block.type === 'Main character') {
       if (!hadDescription && patch.description === undefined) { patch.description = block.body.trim(); summary.push('card description'); }
-      else { create.push(entryFor(block)); summary.push(`new lorebook entry: ${block.name}`); }
+      else { create.push(entryFor(block, narratorCard)); summary.push(`new lorebook entry: ${block.name}`); }
     } else if (block.type === 'Scenario') {
       if (!hadScenario && patch.scenario === undefined) { patch.scenario = block.body.trim(); summary.push('card scenario'); }
-      else { create.push(entryFor(block)); summary.push('new lorebook entry: more scenario'); }
+      else { create.push(entryFor(block, narratorCard)); summary.push('new lorebook entry: more scenario'); }
     } else if (block.type === 'Card field') {
       const field = fieldByName(block.name);
       if (field) { patch[field] = withoutAddedName(block); summary.push(`card ${FIELD_NAMES[field as keyof typeof FIELD_NAMES].toLowerCase()}`); }
       else notes.push(`“${block.name}” isn’t a card field Paige can fill, so it was left out.`);
-    } else if (ENTRY_TYPES.includes(block.type)) { create.push(entryFor(block)); summary.push(`new lorebook entry: ${block.name}`); }
+    } else if (ENTRY_TYPES.includes(block.type)) { create.push(entryFor(block, narratorCard)); summary.push(`new lorebook entry: ${block.name}`); }
   }
   // Greetings, in order
   const greetings = blocks.filter(b => b.type === 'First message' && b.keep !== false).map(b => b.body.trim()).filter(Boolean);
@@ -149,7 +150,7 @@ export function planFix(blocks: Block[], source: CardSource): FixPlan {
     const entryId = block.source?.entryId;
     if (!entryId) continue;
     present.add(entryId);
-    if (changed(block)) { updates.push({ entryId, plan: entryFor(block) }); summary.push(`lorebook entry: ${block.name}`); }
+    if (changed(block)) { updates.push({ entryId, plan: entryFor(block, narratorCard) }); summary.push(`lorebook entry: ${block.name}`); }
   }
   const disable = source.entryIds.filter(id => !present.has(id));
   // A narrator card's cast list follows the people in the notebook.

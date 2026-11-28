@@ -338,7 +338,7 @@ function planCard(blocks, options = {}) {
     entries.push({ comment: "Cast list", key: [], content: cast, constant: true });
   for (const extra of narrators.length ? mains : mains.slice(1))
     entries.push({ comment: `Main character \xB7 ${extra.name}`, key: [extra.name, ...listOf(fieldOf(extra.body, "Aliases"))], content: `[Main character]
-${extra.body}`, constant: true });
+${extra.body}`, constant: !narrators.length });
   for (const extra of scenarios.slice(1))
     entries.push({ comment: "Scenario (more)", key: [], content: `[Scenario]
 ${extra.body}`, constant: true });
@@ -608,7 +608,7 @@ function paigeRules() {
   text = replaceOnce(text, '"The kitchen" fires every time anyone mentions any kitchen. Blank keys on the name.', '"The kitchen" fires every time anyone mentions any kitchen. Blank keys on the name. Add the indirect ways people refer to it in a scene: nicknames, descriptions ("the blue-haired maid", "the scar", "that night"). Leave out everyday words that come up in every scene.');
   text = replaceOnce(text, "- Identity: Full name, Aliases (they become trigger words), Age, Race / species, Role.", '- Identity: Full name, Aliases (they become trigger words, so include what people call them in passing: "the blue-haired maid", "the new guard"), Age, Race / species, Role.');
   text = replaceOnce(text, "- Help {{user}} build any mix of: Main character, Side characters, Scenario,", "- Help {{user}} build any mix of: Narrator, Main character, Side characters, Scenario,");
-  text = replaceOnce(text, "- Where blocks go: Main character in the card's description.", "- Where blocks go: Main character, or Narrator on a narrator card, in the card's description. On a narrator card every person goes in the lorebook, and the app adds a short always-on cast list so the narrator knows who exists.");
+  text = replaceOnce(text, "- Where blocks go: Main character in the card's description.", "- Where blocks go: Main character, or Narrator on a narrator card, in the card's description. On a narrator card every person goes in the lorebook and loads when they come up, and the app adds a short always-on cast list so the narrator knows who exists. Keep each lead's sheet lean on a narrator card: fill what matters for this story and skip the rest, since several leads add up fast.");
   text = replaceOnce(text, "- Ask, in one message: what to build first (menu: Main character, Side character, Scenario, Lore), NSFW on or off, and writing style (**embellished** or **direct**).", "- Ask, in one message: the pitch, NSFW on or off, and writing style (**embellished** or **direct**). Don't ask what to build first; the pitch decides that.");
   text = replaceOnce(text, "- Ask for the pitch in a few sentences: the character or world, and the story it's in. Restate it in 2-3 lines so {{user}} can correct it.", `- Ask for the pitch in a few sentences: the character or world, and the story it's in. Restate it in 2-3 lines so {{user}} can correct it.
 - Then call the card's shape yourself, in a line or two, with why. A **character card**: the story is about one person, and {{char}} is that person. A **narrator card**: the story is about a world, a group, or a journey through many places, or no one person is at the center, and {{char}} is the narrator running all of it. {{user}} can overrule you. If {{user}} already said what to build, go with that. Then start: the main character first on a character card; on a narrator card, the Narrator, then the Scenario, then the people.`);
@@ -621,7 +621,7 @@ function paigeRules() {
 - Pacing: scenes keep moving, dull stretches get skipped, moments that matter get room. One question to {{user}} at a time, at most.
 - Bringing things to {{user}}: how the world hands {{user}} something to react to: people come to them, things turn up, pressures build. Fit it to how {{user}} plays (see what you know about {{user}}).
 - How people act: as they would, not as is convenient. Enemies are smart, people have lives off-screen, and nobody waits around for {{user}}.
-- Secrets & reveals: what stays hidden until it's found in play, and that reveals are earned, never handed over all at once.
+- Secrets & reveals: what stays hidden until it's found in play, and that reveals are earned, never handed over all at once. Don't list example clues here; the model copies examples and starts planting evidence everywhere.
 - Notes: anything left over.
 - Write every section as what's true about the narrator ("Scenes keep moving"), never as orders to it.
 
@@ -637,6 +637,7 @@ Everything below is craft knowledge for you, Paige. It changes what you know, no
 ### Card rules (every piece)
 - Secrets: anything {{user}} or other characters don't know yet goes on its own line starting "Secret (not known yet):", with who does know. The narrator keeps it hidden until it's found out in play, so it has to be findable.
 - One home per fact. Each fact lives in one piece only: the main character's look isn't repeated in a side character's entry, and a place described in its Location entry isn't described again in the Scenario. Another piece can mention it by name. At the hand-off, check for facts that sit in two pieces, say which piece keeps each one, and offer to remove the other copy.
+- Plain names for things. Invent only the terms, systems and institutions the story needs, and name them plainly ("the will reading", not "the Ratification"). Every made-up word is one more thing {{user}} has to learn, and many presets coin more of their own on top.
 - Write what is true, not what to avoid. A fact can be negative ("she can't swim"). An instruction to the writer ("don't make her nice", "never let him break character") is wasted, and naming the thing often makes the model do it. Write the true behavior instead ("she's curt with strangers and slow to warm up").
 - Shared things live in one entry. If several characters share an oath, a power, a uniform or a rule, it goes in the Faction or Concept entry, and each character's entry just names it.
 - Lorebook entries are reference: several load at once, so each holds what a scene needs, in short facts. History entries are the exception; when one comes up, the story of what happened is the point.
@@ -649,6 +650,13 @@ var JUDGMENT_RULES = `### Thinking it through
 - When {{user}} brings a problem ("there's no tension", "she's too passive"), find the cause first: name what on the card makes the model do that. Then two or three fixes with what each one costs, and say which you'd pick.
 - Check your own work before you show it. Does anyone know something they couldn't? Does it break a rule you already set? Give {{user}} homework, make them special without asking, or slip in something they never asked for? Catch it before they do.
 - Drop the reflex openers: "Good catch", "Fair catch", "Dead right", "Smart call", "Honestly?", "100%", "Trust your gut". If you agree, show it by what you do next. Praise only what's actually clever, and say what's clever about it.
+
+### Mysteries
+- Only when the story has one: {{user}}'s pitch has a mystery in it, or {{user}} asks for one. Never add one on your own. Most stories don't need a whodunit, and a mystery on every card gets old fast.
+- When there is one, ask once who runs it: Grimoire (the story extension's mystery mode) or the card. If what you know about {{user}} already says, don't ask.
+  - Grimoire runs it: the card states the question, who's caught up in it and what's at stake, and stops there. No clues, no example evidence, no answer, and no entry that clears or convicts anyone ("she didn't kill him" gives the game away). Grimoire builds the clue trail and keeps the answer from the narrator, so it plays fair.
+  - The card runs it: decide the answer and a short trail of clues, and keep them together in one lorebook entry, each line starting "Secret (not known yet):". Tell {{user}} once, plainly, that the narrator can see that entry, so it may slip.
+- Either way, a mystery is one thread among the others, not the whole story.
 
 ### Names
 Names are where models are laziest, and {{user}} can smell it.
@@ -987,7 +995,7 @@ ${entry.content}`, { source: { entryId: entry.id, bookId: entry.world_book_id, f
     source: { characterId: card.id, name: card.name, bookIds: [...card.world_book_ids], entryIds: used.map((e) => e.id), greetings, skipped: live.length - used.length, broughtAt: now, ...paigeBook ? { paigeBookId: paigeBook } : {}, ...castEntry ? { castEntryId: castEntry.id, cast: castEntry.content } : {} }
   };
 }
-function entryFor(block) {
+function entryFor(block, narratorCard = false) {
   if (block.type === "Lore" || block.source?.foreign) {
     let body = block.body.replace(/\r/g, "");
     const triggers = fieldOf(body, "Trigger words");
@@ -999,7 +1007,7 @@ function entryFor(block) {
   const aliases = listOf(fieldOf(block.body, "Aliases"));
   if (block.type === "Main character")
     return { comment: `Main character \xB7 ${block.name}`, key: [block.name, ...aliases], content: `[Main character]
-${block.body}`, constant: true, foreign: false };
+${block.body}`, constant: !narratorCard, foreign: false };
   if (block.type === "Scenario")
     return { comment: "Scenario (more)", key: [], content: `[Scenario]
 ${block.body}`, constant: true, foreign: false };
@@ -1014,6 +1022,7 @@ var ENTRY_TYPES = ["Side character", "Lore", ...LORE_TYPES];
 var changed = (b) => b.origin === undefined || withoutAddedName(b) !== withoutAddedName({ ...b, body: b.origin });
 function planFix(blocks, source) {
   const notes = [], summary = [];
+  const narratorCard = blocks.some((b) => b.type === "Narrator");
   const patch = {};
   const updates = [], create = [];
   const fromField = (field) => blocks.find((b) => b.source?.field === field);
@@ -1034,7 +1043,7 @@ ${withoutAddedName(block)}` : withoutAddedName(block);
 ${block.body.trim()}`;
         summary.push("card description (now a narrator card)");
         if (was?.type === "Main character") {
-          create.push(entryFor({ ...was, body: withoutAddedName(was) }));
+          create.push(entryFor({ ...was, body: withoutAddedName(was) }, true));
           summary.push(`new lorebook entry: ${was.name}`);
         }
       } else
@@ -1044,7 +1053,7 @@ ${block.body.trim()}`;
         patch.description = block.body.trim();
         summary.push("card description");
       } else {
-        create.push(entryFor(block));
+        create.push(entryFor(block, narratorCard));
         summary.push(`new lorebook entry: ${block.name}`);
       }
     } else if (block.type === "Scenario") {
@@ -1052,7 +1061,7 @@ ${block.body.trim()}`;
         patch.scenario = block.body.trim();
         summary.push("card scenario");
       } else {
-        create.push(entryFor(block));
+        create.push(entryFor(block, narratorCard));
         summary.push("new lorebook entry: more scenario");
       }
     } else if (block.type === "Card field") {
@@ -1063,7 +1072,7 @@ ${block.body.trim()}`;
       } else
         notes.push(`\u201C${block.name}\u201D isn\u2019t a card field Paige can fill, so it was left out.`);
     } else if (ENTRY_TYPES.includes(block.type)) {
-      create.push(entryFor(block));
+      create.push(entryFor(block, narratorCard));
       summary.push(`new lorebook entry: ${block.name}`);
     }
   }
@@ -1082,7 +1091,7 @@ ${block.body.trim()}`;
       continue;
     present.add(entryId);
     if (changed(block)) {
-      updates.push({ entryId, plan: entryFor(block) });
+      updates.push({ entryId, plan: entryFor(block, narratorCard) });
       summary.push(`lorebook entry: ${block.name}`);
     }
   }

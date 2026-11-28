@@ -312,7 +312,10 @@ describe('narrator cards', () => {
     expect(cast.content).toBe(castList(blocks));
     expect(cast.content).toContain('- Mara: ferry captain. she owns the only boat.');
     expect(cast.content).toContain('- Jory: harbor pilot.');
-    expect(plan.entries.some(e => e.comment === 'Main character · Jory' && e.constant)).toBe(true);
+    // On a narrator card, leads load when they come up; the cast list keeps them known.
+    const jory = plan.entries.find(e => e.comment === 'Main character · Jory')!;
+    expect(jory.constant).toBe(false);
+    expect(jory.key).toContain('Jory');
   });
   test('Paige knows how to build one, and keeps her voice', () => {
     const system = String(buildMessages({ mode: 'full', blocks: [], turns: [] })[0].content);
@@ -323,6 +326,10 @@ describe('narrator cards', () => {
     expect(system).toContain('explain it in your own voice');
     expect(system).toContain('Secret (not known yet):');
     expect(system).not.toContain('what to build first (menu:');
+    expect(system).toContain('### Mysteries');
+    expect(system).toContain('Never add one on your own.');
+    expect(system).toContain('Don\'t list example clues here');
+    expect(system).toContain('Plain names for things.');
   });
 });
 

@@ -160,7 +160,7 @@ describe('bringing back a narrator card', () => {
     const { blocks: cb, source: cs } = cardToBlocks(card, entries, id, 1);
     const plan = planFix([...cb, { id: 'n2', type: 'Narrator' as const, name: 'Port Hesk', body: 'Name: Port Hesk\n## Role\nThe narrator.', updatedAt: 2 }], cs);
     expect(plan.patch.description!.startsWith('[Narrator]\nName: Port Hesk')).toBe(true);
-    expect(plan.create.some(e => e.comment === 'Main character · Vesper' && e.constant)).toBe(true);
+    expect(plan.create.some(e => e.comment === 'Main character · Vesper' && !e.constant)).toBe(true);
     expect(plan.create.some(e => e.comment === 'Cast list')).toBe(true);
   });
 });
@@ -181,4 +181,15 @@ test('Paige\'s Notes stay in the notebook and never reach the card', () => {
   const plan = planFix(withNotes, source);
   expect(plan.create).toEqual([]);
   expect(plan.summary).toEqual([]);
+});
+
+test('fixing a narrator card moves always-on leads to load when they come up', () => {
+  const narr: CardIn = { ...card, name: 'Signet', description: '[Narrator]\nName: Signet\n## Role\nThe narrator.' };
+  const lead: EntryIn = { id: 'lead', world_book_id: 'book2', key: ['Preston'], content: '[Main character]\nName: Preston\n## Identity\nAge: 20', comment: 'Main character · Preston', constant: true, disabled: false, extensions: { paige: { sessionId: 's' } } };
+  const { blocks, source } = cardToBlocks(narr, [lead], id, 1);
+  const edited = blocks.map(b => b.name === 'Preston' ? { ...b, body: b.body + '\nOccupation: student' } : b);
+  const plan = planFix(edited, source);
+  const update = plan.updates.find(u => u.entryId === 'lead')!;
+  expect(update.plan.constant).toBe(false);
+  expect(update.plan.key).toContain('Preston');
 });
