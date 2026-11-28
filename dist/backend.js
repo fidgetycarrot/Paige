@@ -85,7 +85,7 @@ var K = new Uint32Array([
 ]);
 
 // src/blocks.ts
-var BLOCK_TYPES = ["Narrator", "Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message"];
+var BLOCK_TYPES = ["Narrator", "Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message", "Notes"];
 var LORE_TYPES = ["Location", "Item", "Faction", "History", "Concept"];
 var LABELS = {
   "main character": "Main character",
@@ -94,6 +94,10 @@ var LABELS = {
   narrator: "Narrator",
   "narrator card": "Narrator",
   "game master": "Narrator",
+  notes: "Notes",
+  note: "Notes",
+  "diagnosis notes": "Notes",
+  diagnosis: "Notes",
   "side character": "Side character",
   side: "Side character",
   npc: "Side character",
@@ -771,6 +775,13 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 - Extra labels for this card: "Lore" is a lorebook entry that isn't one of your types; keep its Name and Trigger words lines at the top (Trigger words: (always on) means it's always active). "Card field" is one of the card's other fields; its Name is one of Personality, Example dialogue, System prompt, Post-history instructions.
 - To change one of the card's first messages, output it as a First message block that starts with its Name line (Name: First message 2). A First message without a Name line is added as a new one. If the fixes change how the story starts, offer to redo the first messages.
 
+#### What the model sees
+{{user}} can send you what their main model sees for the roleplay chat: the full prompt, in pieces, with sizes. The preset's blocks, the card, the lorebook entries that fired, extension notes (Grimoire, memory, trackers), and the chat history (counted, not shown; you read the story through roleplay reading). It's how you tell a card problem from a preset or extension problem.
+- You see it once, with the message it came with. So in that reply, write a Notes piece named "What the model sees" with what you'll need later: the preset's name and the blocks that bear on {{user}}'s problem (quote the key line, briefly), what's always on and roughly how big, what each extension adds and how much, and anything that fights the card. Short facts and short quotes, not a copy. When a new one comes in, replace that piece.
+- Then sort each problem {{user}} raised by where it comes from: the card (you can fix it), the preset, an extension, or the model itself. Show the evidence: the block, the entry, the size. For a cause outside the card, say exactly what to change (the block's name, the setting) and give a cheap test to confirm it ("turn X off and swipe twice; if it still does Y, it wasn't X"). Don't blame the card for what the preset does, or the other way round.
+- Grimoire's note can hold the story's plans and secrets, and {{user}} doesn't want spoilers. Talk about how big it is and what kind of steering it does ("it's pushing a mystery thread every turn"), never what's in it: no names, twists, clues or plans from it.
+- If your notes don't cover what you need for a question, ask for another look: put a code block labeled Dry run with one line saying what you want to check. {{user}} gets a button for it. Don't guess what the prompt says.
+
 #### Fix phase 4: Hand-off
 - List what you changed, say the weakest spot left, and tell {{user}} the Update button saves the fixes to the card, or the copy box saves them as a new card and leaves this one alone.
 - Then tell {{user}} how to bring the fixes into the chat they're already playing. Lumiverse reads the updated card and lorebook on the next reply by itself, but the chat's recent messages pull the other way, and the model copies those more than the card. Judge which kind of change this is:
@@ -898,7 +909,14 @@ function buildMessages(input) {
   const messages = [{ role: "system", content: system }];
   if (trimmed)
     messages.push({ role: "system", content: "(Older messages were trimmed to save room. Every finished piece is in the notebook above.)" });
-  for (const turn of kept) {
+  for (const raw of kept) {
+    const turn = raw.dryRun === undefined ? raw : { ...raw, content: raw.dryRun === "seen" ? `${raw.content}
+
+(I sent you what my main model sees here. You read it then; what you took from it is in your Notes piece and your reply.)` : `${raw.content}
+
+<what_the_model_sees>
+${raw.dryRun}
+</what_the_model_sees>` };
     if (turn.picture && turn.picture !== "seen")
       messages.push({ role: turn.role, content: [{ type: "image", data: turn.picture.data, mime_type: turn.picture.mime }, { type: "text", text: turn.content || "(I sent a picture.)" }] });
     else if (turn.picture === "seen")
@@ -1158,6 +1176,79 @@ function generationError(error, provider, model, picture = false) {
   return new ModelRequestError(`Paige's model request failed (${safe(provider)} / ${safe(model)}; ${code}${status ? `; HTTP ${status}` : ""}). ${detail} Your message is saved; press Retry.`);
 }
 
+// src/dryrun.ts
+var KIND = {
+  block: "Preset block",
+  text: "Preset text",
+  utility: "Preset utility",
+  world_info: "Lorebook entries that fired",
+  chat_history: "Chat history",
+  long_term_memory: "Long-term memory",
+  authors_note: "Author's note",
+  databank: "Databank",
+  databank_mention: "Databank",
+  append: "Appended text",
+  adaptive: "Adaptive"
+};
+var PIECE_MAX = 5000;
+var textOf = (content) => typeof content === "string" ? content : Array.isArray(content) ? content.map((p) => p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join(`
+`) : "";
+var cut = (s, max) => s.length > max ? `${s.slice(0, max)}
+[\u2026 ${(s.length - max).toLocaleString("en-US")} more characters left out]` : s;
+function dryRunText(run, chatName, budget = 60000) {
+  const tokens = run.tokenCount?.total_tokens ?? run.breakdown.reduce((n, p) => n + (p.excludeFromTotal ? 0 : p.preCountedTokens ?? 0), 0);
+  const tokensFor = (p) => run.tokenCount?.breakdown.find((t) => t.name === p.name && t.type === p.type)?.tokens ?? p.preCountedTokens;
+  const head = [
+    `# What the model sees: \u201C${chatName}\u201D`,
+    `Model: ${[run.provider, run.model].filter(Boolean).join(" / ") || "unknown"}. About ${tokens.toLocaleString("en-US")} tokens in all.`,
+    run.worldInfoStats ? `Lorebook: ${run.worldInfoStats.activatedAfterBudget ?? 0} of ${run.worldInfoStats.totalCandidates ?? 0} entries fired (${(run.worldInfoStats.estimatedTokens ?? 0).toLocaleString("en-US")} tokens)${run.worldInfoStats.evictedByBudget ? `, ${run.worldInfoStats.evictedByBudget} dropped for lack of room` : ""}.` : "",
+    run.memoryStats?.enabled ? `Chat memory: ${run.memoryStats.chunksRetrieved ?? 0} old passages pulled back in.` : ""
+  ].filter(Boolean);
+  const list = run.breakdown.map((p) => {
+    const size = tokensFor(p);
+    const from = p.extensionName ? ` (added by the ${p.extensionName} extension)` : "";
+    const count = p.type === "chat_history" && p.messageCount ? `, ${p.messageCount} messages` : "";
+    return `- ${KIND[p.type] ?? p.type}: ${p.name || "unnamed"}${from}${count}${size ? `, ~${size.toLocaleString("en-US")} tokens` : ""}`;
+  });
+  const parts = [...head, "", "## Pieces, in order", ...list, "", "## What each piece says"];
+  let used = parts.join(`
+`).length;
+  const shown = new Set;
+  let full = false;
+  const add = (title, body) => {
+    const piece = `### ${title}
+${cut(body.trim(), PIECE_MAX)}`;
+    if (full || used + piece.length > budget) {
+      full = true;
+      return false;
+    }
+    parts.push(piece);
+    used += piece.length;
+    shown.add(body.trim().slice(0, 160));
+    return true;
+  };
+  for (const p of run.breakdown) {
+    if (p.type === "chat_history" || !p.content?.trim())
+      continue;
+    if (!add(`${KIND[p.type] ?? p.type}: ${p.name || "unnamed"}${p.extensionName ? ` (${p.extensionName})` : ""}`, p.content))
+      break;
+  }
+  for (const m of run.messages) {
+    if (m.role !== "system")
+      continue;
+    const body = textOf(m.content).trim();
+    if (!body || [...shown].some((s) => body.includes(s) || s.includes(body.slice(0, 160))))
+      continue;
+    if (!add("Not labeled (probably an extension or a macro)", body))
+      break;
+  }
+  if (full)
+    parts.push(`
+[The report hit its size limit; some pieces aren\u2019t shown. Ask for another look at a specific piece if you need it.]`);
+  return { text: parts.join(`
+`), tokens };
+}
+
 // src/perspective.ts
 var POVS = ["3rd-limited", "3rd-close", "2nd", "1st"];
 var POV_SETTINGS = ["preset", ...POVS];
@@ -1261,13 +1352,17 @@ function readSession(value) {
     const list = v.map(record).filter((x) => typeof x.text === "string" && x.text).slice(0, 3).map((x) => ({ text: String(x.text).slice(0, 240), state: ["open", "added", "skipped"].includes(String(x.state)) ? x.state : "open" }));
     return list.length ? { remember: list } : {};
   };
+  const dryRunOf = (v) => {
+    const d = record(v);
+    return typeof d.id === "string" && PICTURE_ID.test(d.id) ? { dryRun: { id: d.id, tokens: Number(d.tokens) || 0, chatName: String(d.chatName ?? "").slice(0, 200) } } : {};
+  };
   const pictureOf = (v) => {
     const p = record(v);
     return typeof p.id === "string" && PICTURE_ID.test(p.id) && PICTURE_MIMES.includes(p.mime) ? { picture: { id: p.id, mime: p.mime } } : {};
   };
   const turns = v.turns.filter((t) => record(t).role === "user" || record(t).role === "assistant").map((t) => {
     const r = record(t);
-    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture) };
+    return { role: r.role, content: String(r.content ?? ""), at: Number(r.at) || 0, ...Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}, ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture), ...dryRunOf(r.dryRun) };
   });
   const blocks = v.blocks.map((b) => record(b)).filter((b) => typeof b.id === "string" && BLOCK_TYPES.includes(String(b.type))).map((b) => ({
     id: String(b.id),
@@ -1588,11 +1683,23 @@ function setupBackend(api) {
             picture = { id: uuid(), mime };
             await api.userStorage.writeBinary(picturePath(picture), bytes, userId);
           }
-          if (!message && !picture)
+          let dryRun;
+          if (input.dryRun === true) {
+            const rp = current.roleplay;
+            if (!current.source || !rp?.chatId)
+              throw new Error("Bring a card back and switch on \u201CLet Paige read the roleplay\u201D first, so Paige knows which chat to look at.");
+            const run = await api.generate.dryRun({ chatId: rp.chatId }, userId).catch((e) => {
+              throw new Error(`Lumiverse couldn\u2019t build the prompt for that chat: ${e instanceof Error ? e.message.slice(0, 200) : "unknown error"}`);
+            });
+            const report = dryRunText(run, rp.chatName);
+            dryRun = { id: uuid(), tokens: report.tokens, chatName: rp.chatName };
+            await api.userStorage.setJson(`dryruns/${dryRun.id}.json`, { text: report.text, at: Date.now() }, { userId });
+          }
+          if (!message && !picture && !dryRun)
             throw new Error("Type something first.");
           if (current.turns.length >= MAX_TURNS)
             throw new Error("This session is very long. Make the card, then use Start over for the next one.");
-          current.turns.push({ role: "user", content: message, at: Date.now(), ...picture ? { picture } : {} });
+          current.turns.push({ role: "user", content: message, at: Date.now(), ...picture ? { picture } : {}, ...dryRun ? { dryRun } : {} });
           current.undo = current.blocks.map((b) => ({ ...b }));
         } else {
           const last = current.turns[current.turns.length - 1];
@@ -1752,7 +1859,14 @@ function setupBackend(api) {
       async function withPicture(turns) {
         const newest = lastPicture(turns);
         const data = newest ? await api.userStorage.readBinary(picturePath(newest), userId).then(toBase64).catch(() => null) : null;
-        return turns.map((t) => ({ role: t.role, content: t.content, ...t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : "seen" } : {} }));
+        const lastUser = [...turns].reverse().find((t) => t.role === "user");
+        const report = lastUser?.dryRun ? await api.userStorage.getJson(`dryruns/${lastUser.dryRun.id}.json`, { fallback: {}, userId }).then((v) => v.text ?? null).catch(() => null) : null;
+        return turns.map((t) => ({
+          role: t.role,
+          content: t.content,
+          ...t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : "seen" } : {},
+          ...t.dryRun ? { dryRun: t === lastUser && report ? report : "seen" } : {}
+        }));
       }
       async function setCardPicture(characterId, pictureId) {
         if (typeof pictureId !== "string" || !pictureId)

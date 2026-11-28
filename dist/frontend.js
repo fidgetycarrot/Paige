@@ -84,7 +84,8 @@ var K = new Uint32Array([
 ]);
 
 // src/blocks.ts
-var BLOCK_TYPES = ["Narrator", "Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message"];
+var BLOCK_TYPES = ["Narrator", "Main character", "Side character", "Scenario", "Location", "Item", "Faction", "History", "Concept", "Lore", "Card field", "Persona", "First message", "Notes"];
+var NOTE_TYPES = ["Notes"];
 var LORE_TYPES = ["Location", "Item", "Faction", "History", "Concept"];
 var LABELS = {
   "main character": "Main character",
@@ -93,6 +94,10 @@ var LABELS = {
   narrator: "Narrator",
   "narrator card": "Narrator",
   "game master": "Narrator",
+  notes: "Notes",
+  note: "Notes",
+  "diagnosis notes": "Notes",
+  diagnosis: "Notes",
   "side character": "Side character",
   side: "Side character",
   npc: "Side character",
@@ -402,6 +407,28 @@ function oocNote(info, body) {
   return !info.trim() && first >= 0 && OOC_LABEL.test(lines[first]) ? lines.slice(first + 1).join(`
 `).trim() : null;
 }
+var DRY_LABEL = /^[ \t]*[*_#]*[ \t]*dry[ -]?run[ \t]*[*_:]*[ \t]*$/i;
+function dryRunAsk(info, body) {
+  if (DRY_LABEL.test(info))
+    return body.trim();
+  const lines = body.split(`
+`);
+  const first = lines.findIndex((l) => l.trim());
+  return !info.trim() && first >= 0 && DRY_LABEL.test(lines[first]) ? lines.slice(first + 1).join(`
+`).trim() : null;
+}
+var askForDryRun = null;
+function dryRunBox(what, live) {
+  const box = el("div", undefined, "pg-ooc");
+  const head = el("div", undefined, "pg-ooc-head");
+  const go = el("button", "Send it", "pg-btn pg-primary");
+  go.type = "button";
+  go.disabled = live;
+  head.append(el("span", "Paige wants another look at what your model sees"), go);
+  go.addEventListener("click", () => askForDryRun?.(what));
+  box.append(head, el("p", what, "pg-note"));
+  return box;
+}
 function oocBox(note) {
   const box = el("div", undefined, "pg-ooc");
   const head = el("div", undefined, "pg-ooc-head");
@@ -457,6 +484,11 @@ function message(target, text, live = false) {
     const ooc = oocNote(m[3], m[4]);
     if (ooc !== null) {
       target.append(oocBox(ooc));
+      continue;
+    }
+    const again = dryRunAsk(m[3], m[4]);
+    if (again !== null) {
+      target.append(dryRunBox(again, live));
       continue;
     }
     let type = info ? labelOf(info) : null;
@@ -524,6 +556,7 @@ var STYLES = `
 .pg-ooc{margin:10px 0;border:1px solid var(--pg-edge);border-left:3px solid var(--pg-violet);border-radius:8px;padding:8px 10px;background:#ffffff08}
 .pg-ooc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--pg-pencil);margin-bottom:6px}
 .pg-ooc .pg-pre{margin:0;white-space:pre-wrap}
+.pg-dry-chip{font-size:12px;color:var(--pg-pencil);border:1px dashed var(--pg-edge);border-radius:6px;padding:4px 8px;margin-bottom:6px;display:inline-block}
 .pg-remember{font-size:13px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:6px;border:1px dashed #b583ff66;background:#b583ff10;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pg-remember span{flex:1;min-width:180px}.pg-remember[data-done=true]{color:var(--pg-pencil);border-style:solid;border-color:var(--pg-edge);background:none}
 .pg-about{width:100%;font:inherit;font-size:14px;line-height:1.5;resize:vertical}.pg-count{display:block;text-align:right}
@@ -994,8 +1027,14 @@ function setup(ctx, options = {}) {
     reachPick.append(o);
   }
   const readNote = el("div", "", "pg-note pg-fix-note");
+  const seeButton = el("button", "What the model sees", "pg-btn");
+  seeButton.type = "button";
+  seeButton.hidden = true;
+  seeButton.title = "Send Paige the full prompt your main model gets for this chat: the preset, the card, the lorebook and extensions. Sent once, with your next message.";
+  seeButton.addEventListener("click", () => void sendDryRun());
+  askForDryRun = (what) => void sendDryRun(`Here’s another look at what my main model sees. You wanted to check: ${what}`);
   const fixLine = el("div", undefined, "pg-fix-line");
-  fixLine.append(fixTitle, readRow, chatPick, reachPick);
+  fixLine.append(fixTitle, readRow, chatPick, reachPick, seeButton);
   fixBar.append(fixLine, readNote);
   views.chat.append(fixBar, log, compose);
   const grow = () => {
@@ -1493,17 +1532,21 @@ function setup(ctx, options = {}) {
         render();
     }
   }
-  function sendText(text) {
-    if (!text.trim() && !pendingPicture)
+  function sendText(text, dryRun = false) {
+    if (!text.trim() && !pendingPicture && !dryRun)
       return;
     if (!snapshot?.settings.connectionId) {
       show("settings");
       settingsNotify("Pick a model connection for Paige first.", true);
       return;
     }
-    return talk("send", text);
+    return talk("send", text, dryRun);
   }
-  async function talk(action, text) {
+  function sendDryRun(ask = "") {
+    const typed = box.value.trim();
+    return sendText(typed || ask || "Here’s what my main model sees for this chat. Work out what’s coming from the card, the preset, or an extension.", true);
+  }
+  async function talk(action, text, dryRun = false) {
     if (busy || closed || remoteBusy)
       return;
     busy = true;
@@ -1512,7 +1555,7 @@ function setup(ctx, options = {}) {
       const local = picture ? { id: `local-${Date.now()}`, mime: picture.mime } : undefined;
       if (local && picture)
         pictureUrls.set(local.id, picture.url);
-      session.turns.push({ role: "user", content: text.trim(), at: Date.now(), ...local ? { picture: local } : {} });
+      session.turns.push({ role: "user", content: text.trim(), at: Date.now(), ...local ? { picture: local } : {}, ...dryRun ? { dryRun: { id: "local", tokens: 0, chatName: session.roleplay?.chatName ?? "" } } : {} });
       box.value = "";
       grow();
       pendingPicture = null;
@@ -1537,7 +1580,7 @@ function setup(ctx, options = {}) {
     update();
     notify("");
     try {
-      const result = await rpc.request(action, action === "send" ? { text, ...picture ? { picture: { data: picture.data, mime: picture.mime } } : {} } : {}, (partial) => {
+      const result = await rpc.request(action, action === "send" ? { text, ...picture ? { picture: { data: picture.data, mime: picture.mime } } : {}, ...dryRun ? { dryRun: true } : {} } : {}, (partial) => {
         if (!streaming)
           return;
         const keep = log.scrollTop;
@@ -1678,6 +1721,8 @@ function setup(ctx, options = {}) {
       if (turn.role === "user") {
         if (turn.picture)
           node.append(pictureImg(turn.picture.id, "pg-pic", "Your picture"));
+        if (turn.dryRun)
+          node.append(el("div", turn.dryRun.tokens ? `What the model sees: “${turn.dryRun.chatName}”, about ${turn.dryRun.tokens.toLocaleString()} tokens` : "What the model sees: building it…", "pg-dry-chip"));
         if (turn.content)
           node.append(document.createTextNode(turn.content));
         node.style.setProperty("--pg-tilt", [".6deg", "-.5deg", ".3deg"][index % 3]);
@@ -1902,6 +1947,7 @@ function setup(ctx, options = {}) {
     readBox.checked = !!rp?.on;
     chatPick.hidden = !rp?.on;
     reachPick.hidden = !rp?.on;
+    seeButton.hidden = !rp?.on;
     reachPick.value = rp?.reach ?? "recent";
     if (rp?.on && !chatPick.options.length && !fillingChats) {
       fillingChats = true;
@@ -2002,7 +2048,8 @@ function setup(ctx, options = {}) {
     const warn = !!last?.cut && last.cut.why !== "stopped";
     if (warn)
       lines.push("Paige’s last reply was cut off, so the notebook may be missing pieces. Ask her to finish in the chat first.");
-    const pending = session?.source ? blocks.filter(changed) : session?.card ? blocks.filter((b) => b.updatedAt > session.card.savedAt) : [];
+    const cardPieces = blocks.filter((b) => !NOTE_TYPES.includes(b.type));
+    const pending = session?.source ? cardPieces.filter(changed) : session?.card ? cardPieces.filter((b) => b.updatedAt > session.card.savedAt) : [];
     if (pending.length)
       lines.push(`Not on the card yet: ${pending.map((b) => b.name || b.type).join(", ")}.`);
     else if (session?.card || session?.source)

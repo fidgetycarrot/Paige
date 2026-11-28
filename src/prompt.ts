@@ -260,6 +260,13 @@ The card is "${card}". All of its pieces are in the notebook below, as they are 
 - Extra labels for this card: "Lore" is a lorebook entry that isn't one of your types; keep its Name and Trigger words lines at the top (Trigger words: (always on) means it's always active). "Card field" is one of the card's other fields; its Name is one of Personality, Example dialogue, System prompt, Post-history instructions.
 - To change one of the card's first messages, output it as a First message block that starts with its Name line (Name: First message 2). A First message without a Name line is added as a new one. If the fixes change how the story starts, offer to redo the first messages.
 
+#### What the model sees
+{{user}} can send you what their main model sees for the roleplay chat: the full prompt, in pieces, with sizes. The preset's blocks, the card, the lorebook entries that fired, extension notes (Grimoire, memory, trackers), and the chat history (counted, not shown; you read the story through roleplay reading). It's how you tell a card problem from a preset or extension problem.
+- You see it once, with the message it came with. So in that reply, write a Notes piece named "What the model sees" with what you'll need later: the preset's name and the blocks that bear on {{user}}'s problem (quote the key line, briefly), what's always on and roughly how big, what each extension adds and how much, and anything that fights the card. Short facts and short quotes, not a copy. When a new one comes in, replace that piece.
+- Then sort each problem {{user}} raised by where it comes from: the card (you can fix it), the preset, an extension, or the model itself. Show the evidence: the block, the entry, the size. For a cause outside the card, say exactly what to change (the block's name, the setting) and give a cheap test to confirm it ("turn X off and swipe twice; if it still does Y, it wasn't X"). Don't blame the card for what the preset does, or the other way round.
+- Grimoire's note can hold the story's plans and secrets, and {{user}} doesn't want spoilers. Talk about how big it is and what kind of steering it does ("it's pushing a mystery thread every turn"), never what's in it: no names, twists, clues or plans from it.
+- If your notes don't cover what you need for a question, ask for another look: put a code block labeled Dry run with one line saying what you want to check. {{user}} gets a button for it. Don't guess what the prompt says.
+
 #### Fix phase 4: Hand-off
 - List what you changed, say the weakest spot left, and tell {{user}} the Update button saves the fixes to the card, or the copy box saves them as a new card and leaves this one alone.
 - Then tell {{user}} how to bring the fixes into the chat they're already playing. Lumiverse reads the updated card and lorebook on the next reply by itself, but the chat's recent messages pull the other way, and the model copies those more than the card. Judge which kind of change this is:
@@ -342,7 +349,7 @@ export function exampleText(): string {
   return `### Example exchanges (style reference only)\n${CARD.mes_example.replaceAll('{{char}}', 'Paige')}`;
 }
 
-export type ChatTurn = { role: 'user' | 'assistant'; content: string; picture?: { data: string; mime: string } | 'seen' };
+export type ChatTurn = { role: 'user' | 'assistant'; content: string; picture?: { data: string; mime: string } | 'seen'; dryRun?: string | 'seen' };
 type Part = { type: 'text'; text: string } | { type: 'image'; data: string; mime_type: string };
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string | Part[] };
 
@@ -392,7 +399,11 @@ export function buildMessages(input: { mode: Mode; blocks: Block[]; turns: ChatT
   const messages: PromptMessage[] = [{ role: 'system', content: system }];
   if (trimmed) messages.push({ role: 'system', content: '(Older messages were trimmed to save room. Every finished piece is in the notebook above.)' });
   // The greeting is Paige's first line; most providers want a user turn first, so it rides along as context.
-  for (const turn of kept) {
+  for (const raw of kept) {
+    // What the model sees goes in once, with the message it came with; after that Paige has her notes.
+    const turn = raw.dryRun === undefined ? raw : { ...raw, content: raw.dryRun === 'seen'
+      ? `${raw.content}\n\n(I sent you what my main model sees here. You read it then; what you took from it is in your Notes piece and your reply.)`
+      : `${raw.content}\n\n<what_the_model_sees>\n${raw.dryRun}\n</what_the_model_sees>` };
     if (turn.picture && turn.picture !== 'seen') messages.push({ role: turn.role, content: [{ type: 'image', data: turn.picture.data, mime_type: turn.picture.mime }, { type: 'text', text: turn.content || '(I sent a picture.)' }] });
     else if (turn.picture === 'seen') messages.push({ role: turn.role, content: `${turn.content ? `${turn.content}\n\n` : ''}(I sent a picture with this message. You saw it then; what you took from it is in your reply and the notebook.)` });
     else messages.push({ role: turn.role, content: turn.content });

@@ -4,6 +4,7 @@ import { buildMessages, fixGreeting, greeting, roleplayText } from './prompt';
 import { cardToBlocks, planFix, type CardIn, type CardSource, type EntryIn } from './fix';
 import { generationError, ModelRequestError } from './errors';
 import { promptCleaner } from './prompt';
+import { dryRunText, type DryRunIn } from './dryrun';
 import { REACH_BUDGET, REACHES, type Reach } from './contracts';
 import { ABOUT_MAX, PICTURE_MAX_BYTES, PICTURE_MIMES, record, type PictureMime, text, THINKING, type CardListItem, type CardResult, type CastStatus, type ChatListItem, type Session, type Settings, type Snapshot, type Thinking, type Turn } from './contracts';
 import { uuid } from './safe-id';
@@ -57,13 +58,17 @@ function readSession(value: unknown): Session | null {
       .map(x => ({ text: String(x.text).slice(0, 240), state: (['open', 'added', 'skipped'].includes(String(x.state)) ? x.state : 'open') as 'open' | 'added' | 'skipped' }));
     return list.length ? { remember: list } : {};
   };
+  const dryRunOf = (v: unknown): Pick<Turn, 'dryRun'> => {
+    const d = record(v);
+    return typeof d.id === 'string' && PICTURE_ID.test(d.id) ? { dryRun: { id: d.id, tokens: Number(d.tokens) || 0, chatName: String(d.chatName ?? '').slice(0, 200) } } : {};
+  };
   const pictureOf = (v: unknown): Pick<Turn, 'picture'> => {
     const p = record(v);
     return typeof p.id === 'string' && PICTURE_ID.test(p.id) && PICTURE_MIMES.includes(p.mime as PictureMime) ? { picture: { id: p.id, mime: p.mime as PictureMime } } : {};
   };
   const turns: Turn[] = v.turns.filter(t => record(t).role === 'user' || record(t).role === 'assistant').map(t => {
     const r = record(t);
-    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}), ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture) };
+    return { role: r.role as Turn['role'], content: String(r.content ?? ''), at: Number(r.at) || 0, ...(Array.isArray(r.saved) ? { saved: r.saved.map(String).slice(0, 40) } : {}), ...cutOf(r.cut), ...rememberOf(r.remember), ...pictureOf(r.picture), ...dryRunOf(r.dryRun) };
   });
   const blocks: Block[] = v.blocks.map(b => record(b)).filter(b => typeof b.id === 'string' && (BLOCK_TYPES as readonly string[]).includes(String(b.type))).map(b => ({
     id: String(b.id), type: b.type as BlockType, name: String(b.name ?? ''), body: String(b.body ?? ''), updatedAt: Number(b.updatedAt) || 0,
@@ -313,9 +318,19 @@ export function setupBackend(api: SpindleAPI) {
             picture = { id: uuid(), mime };
             await api.userStorage.writeBinary(picturePath(picture), bytes, userId);
           }
-          if (!message && !picture) throw new Error('Type something first.');
+          let dryRun: Turn['dryRun'];
+          if (input.dryRun === true) {
+            // The full prompt the main model gets for the roleplay chat, built without calling the model.
+            const rp = current.roleplay;
+            if (!current.source || !rp?.chatId) throw new Error('Bring a card back and switch on “Let Paige read the roleplay” first, so Paige knows which chat to look at.');
+            const run = await api.generate.dryRun({ chatId: rp.chatId }, userId).catch((e: unknown) => { throw new Error(`Lumiverse couldn’t build the prompt for that chat: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown error'}`); });
+            const report = dryRunText(run as unknown as DryRunIn, rp.chatName);
+            dryRun = { id: uuid(), tokens: report.tokens, chatName: rp.chatName };
+            await api.userStorage.setJson(`dryruns/${dryRun.id}.json`, { text: report.text, at: Date.now() }, { userId });
+          }
+          if (!message && !picture && !dryRun) throw new Error('Type something first.');
           if (current.turns.length >= MAX_TURNS) throw new Error('This session is very long. Make the card, then use Start over for the next one.');
-          current.turns.push({ role: 'user', content: message, at: Date.now(), ...(picture ? { picture } : {}) });
+          current.turns.push({ role: 'user', content: message, at: Date.now(), ...(picture ? { picture } : {}), ...(dryRun ? { dryRun } : {}) });
           current.undo = current.blocks.map(b => ({ ...b }));
         } else {
           // A retry takes back Paige's last reply and whatever it put on the Sheet.
@@ -439,7 +454,14 @@ export function setupBackend(api: SpindleAPI) {
       async function withPicture(turns: Turn[]) {
         const newest = lastPicture(turns);
         const data = newest ? await api.userStorage.readBinary(picturePath(newest), userId).then(toBase64).catch(() => null) : null;
-        return turns.map(t => ({ role: t.role, content: t.content, ...(t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : 'seen' as const } : {}) }));
+        // What the model sees, like a picture: only with the newest message you sent.
+        const lastUser = [...turns].reverse().find(t => t.role === 'user');
+        const report = lastUser?.dryRun ? await api.userStorage.getJson<{ text?: string }>(`dryruns/${lastUser.dryRun.id}.json`, { fallback: {}, userId }).then(v => v.text ?? null).catch(() => null) : null;
+        return turns.map(t => ({
+          role: t.role, content: t.content,
+          ...(t.picture ? { picture: t.picture === newest && data ? { data, mime: t.picture.mime } : 'seen' as const } : {}),
+          ...(t.dryRun ? { dryRun: t === lastUser && report ? report : 'seen' as const } : {}),
+        }));
       }
 
       /** Makes one of your pictures the card's picture, if you picked one. Returns a note if it didn't work. */

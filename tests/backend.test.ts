@@ -36,6 +36,17 @@ function fakeHost(replies: string[], lumicast = true, denied: string[] = []) {
     connections: { list: async () => [{ id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek', is_default: true, preset_id: 'p1' }], get: async (id: string) => id === 'c1' ? { id: 'c1', name: 'Cheap', provider: 'openrouter', model: 'deepseek' } : null },
     generate: {
       raw: async (request: { messages: { content: string }[] }) => { raws.push(request); return { content: '{"pov": "3rd-limited", "quote": "Never reveal {{char}}’s thoughts"}' }; },
+      dryRun: async (input: { chatId: string }) => ({
+        model: 'gemini', provider: 'openrouter', parameters: {},
+        messages: [{ role: 'system', content: 'Preset says: coin new terms.' }, { role: 'system', content: 'GRIMOIRE NOTE: steer toward the vault.' }, { role: 'user', content: 'hi' }],
+        breakdown: [
+          { type: 'block', name: 'Lore Glossary', content: 'Preset says: coin new terms.', preCountedTokens: 40 },
+          { type: 'chat_history', name: 'Chat History', messageCount: 45, preCountedTokens: 30000 },
+          { type: 'world_info', name: 'Vivian', content: 'Vivian entry text', preCountedTokens: 900 },
+        ],
+        tokenCount: { total_tokens: 41000, breakdown: [] },
+        chatId: input.chatId,
+      }),
       rawStream: async function* (request: unknown) {
         requests.push(request);
         const text = replies.shift() ?? 'ok';
@@ -321,6 +332,19 @@ describe('Paige backend', () => {
     expect(await host.call<unknown[]>('listChats')).toEqual([{ id: 'ch1', name: 'Night one', updatedAt: 9 }]);
     const rp = await host.call<{ count: number; words: number }>('setRoleplay', { on: true, chatId: 'ch1' });
     expect(rp.count).toBe(2);
+    // What the model sees: built once, sent with that message only, then marked as seen.
+    const looked = await host.call<{ session: { turns: { dryRun?: { tokens: number } }[] } }>('send', { text: '', dryRun: true });
+    expect(looked.session.turns.at(-2)!.dryRun!.tokens).toBe(41000);
+    let looksPrompt = (host.requests.at(-1) as { messages: { content: string }[] }).messages.map(m => String(m.content)).join('\n');
+    expect(looksPrompt).toContain('<what_the_model_sees>');
+    expect(looksPrompt).toContain('Preset block: Lore Glossary');
+    expect(looksPrompt).toContain('Chat history: Chat History, 45 messages');
+    expect(looksPrompt).toContain('Not labeled (probably an extension or a macro)');
+    expect(looksPrompt).toContain('#### What the model sees');
+    await host.call('send', { text: 'and now?' });
+    looksPrompt = (host.requests.at(-1) as { messages: { content: string }[] }).messages.map(m => String(m.content)).join('\n');
+    expect(looksPrompt).not.toContain('<what_the_model_sees>');
+    expect(looksPrompt).toContain('You read it then');
     const further = await host.call<{ session: { roleplay: { reach: string } } }>('setRoleplay', { on: true, chatId: 'ch1', reach: 'all' });
     expect(further.session.roleplay.reach).toBe('all');
     // Picking another chat keeps how far back she reads.

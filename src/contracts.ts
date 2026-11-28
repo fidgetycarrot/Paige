@@ -26,6 +26,8 @@ export interface Turn {
   remember?: { text: string; state: 'open' | 'added' | 'skipped' }[];
   /** A picture sent with this message. The model sees it once, with this message; it's kept in Paige's storage. */
   picture?: { id: string; mime: PictureMime };
+  /** What the main model sees for the roleplay chat (a dry run), sent with this message. Paige reads it once; it's kept in her storage. */
+  dryRun?: { id: string; tokens: number; chatName: string };
 }
 export type PictureMime = 'image/jpeg' | 'image/png' | 'image/webp';
 export const PICTURE_MIMES: PictureMime[] = ['image/jpeg', 'image/png', 'image/webp'];

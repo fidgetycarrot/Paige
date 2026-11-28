@@ -1,7 +1,9 @@
 import { uuid } from './safe-id';
 /** Reading Paige's finished blocks out of her replies, keeping the Sheet, and laying the Sheet out as a card. No host calls here. */
 
-export const BLOCK_TYPES = ['Narrator', 'Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message'] as const;
+export const BLOCK_TYPES = ['Narrator', 'Main character', 'Side character', 'Scenario', 'Location', 'Item', 'Faction', 'History', 'Concept', 'Lore', 'Card field', 'Persona', 'First message', 'Notes'] as const;
+/** Paige's own working notes: kept in the notebook so she remembers them, never saved to the card. */
+export const NOTE_TYPES: BlockType[] = ['Notes'];
 export type BlockType = typeof BLOCK_TYPES[number];
 export type Mode = 'full' | 'quick';
 export const LORE_TYPES: BlockType[] = ['Location', 'Item', 'Faction', 'History', 'Concept'];
@@ -28,6 +30,7 @@ export interface BlockSource { field?: CardField; entryId?: string; bookId?: str
 const LABELS: Record<string, BlockType> = {
   'main character': 'Main character', 'main': 'Main character', 'character': 'Main character',
   'narrator': 'Narrator', 'narrator card': 'Narrator', 'game master': 'Narrator',
+  'notes': 'Notes', 'note': 'Notes', 'diagnosis notes': 'Notes', 'diagnosis': 'Notes',
   'side character': 'Side character', 'side': 'Side character', 'npc': 'Side character',
   'scenario': 'Scenario',
   'location': 'Location', 'item': 'Item', 'faction': 'Faction', 'history': 'History', 'history event': 'History', 'event': 'History', 'concept': 'Concept',

@@ -173,3 +173,12 @@ test('the hand-off says how to bring fixes into the chat, and an OOC note is not
   expect(parseBlocks('Paste this:\n```\nOOC note\n(OOC: Dina dresses casually at home now.)\n```')).toEqual([]);
   expect(parseBlocks('```OOC note\n(OOC: hi)\n```')).toEqual([]);
 });
+
+test('Paige\'s Notes stay in the notebook and never reach the card', () => {
+  const { blocks, source } = cardToBlocks(card, entries, id, 1);
+  const withNotes = upsertBlocks(blocks, parseBlocks('```\nNotes\nName: What the model sees\nThreadBare adds 2-5 new terms a turn.\n```'), 2, id).sheet;
+  expect(withNotes.some(b => b.type === 'Notes')).toBe(true);
+  const plan = planFix(withNotes, source);
+  expect(plan.create).toEqual([]);
+  expect(plan.summary).toEqual([]);
+});
